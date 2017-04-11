@@ -37,18 +37,18 @@ type MainDiff struct {
 }
 
 type SketchLayerDiff struct {
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	MainDiff
 }
 
 type SketchArtboardDiff struct {
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	LayerDiff map[string]interface{} `json:"layer_diff,omitempty"`
 	MainDiff
 }
 
 type SketchPageDiff struct {
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	ArtboardDiff map[string]interface{} `json:"artboard_diff,omitempty"`
 	MainDiff
 }
@@ -500,8 +500,8 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 	if !isNice {
 		for i := range fsMerge.MergeActions {
 			//fmt.Printf("ext: %v", filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)))
-			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)) == ".json" {
-				result, err := CompareJSON(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey)
+			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
+				result, err := CompareJSON(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
 				if err != nil {
 					return nil, err
 				}
@@ -516,8 +516,8 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 	} else {
 		for i := range fsMerge.MergeActions {
 			//fmt.Printf("ext: %v", filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)))
-			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)) == ".json" {
-				result, err := CompareJSONNice(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey)
+			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
+				result, err := CompareJSONNice(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
 				if err != nil {
 					return nil, err
 				}
@@ -566,8 +566,8 @@ func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{},
 func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
 
 	for i := range mergeJSON.MergeActions {
-		srcFilePath := workingDirV1 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey
-		dstFilePath := workingDirV2 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey
+		srcFilePath := workingDirV1 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
+		dstFilePath := workingDirV2 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
 		jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
 
 		if err != nil {

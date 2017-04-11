@@ -25,15 +25,15 @@ func BuildReg(regstr string) (*regexp.Regexp) {
 }
 
 type DependentObj struct {
-	JsonPath string
-	Location string
+	JsonPath string `json:"path,omitempty"`
+	Ref string `json:"ref,omitempty"`
+	Key string `json:"key,omitempty"`
 }
 
 type DependentObjects struct {
-	DepObj map[string][]interface{}
+	DepObj map[string]interface{} `json:"dep_obj,omitempty"`
+	DepPath map[string]interface{} `json:"dep_path,omitempty"`
 }
-
-
 
 func _timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
@@ -67,29 +67,39 @@ func IsSketchID(value interface{}) bool {
 	return DetectID(value)
 }
 
-func (dep* DependentObjects) AddDependentObject(key interface{}, value interface{}, location string, jsonpath string)  {
-	keyString := key.(string)
-	valueString := key.(string)
-	if IsSketchID(keyString) {
-		depItem := dep.DepObj[keyString]
-		if depItem != nil {
-			depItem = make([]interface{}, 1)
-		}
-		dep.DepObj[keyString] = append(depItem, DependentObj{jsonpath, location})
+func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, value interface{}, jsonpath string)  {
+
+	var depKey string
+	var depMap map[string]interface{}
+
+	if objKey != nil {
+		depKey = objKey.(string)
+		depMap = dep.DepObj
+	} else {
+		depKey = jsonpath
+		depMap = dep.DepPath
 	}
 
-	if IsSketchID(valueString) {
-		depItem := dep.DepObj[valueString]
-		if depItem != nil {
-			depItem = make([]interface{}, 1)
+	if IsSketchID(key) {
+		depItem := depMap[depKey]
+		if depItem == nil {
+			depItem = make([]interface{}, 0)
 		}
-		dep.DepObj[valueString] = append(depItem, DependentObj{jsonpath, location})
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Key:key, Ref:key})
+	}
+
+	if IsSketchID(value) {
+		depItem := depMap[depKey]
+		if depItem == nil {
+			depItem = make([]interface{}, 0)
+		}
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Key:key, Ref:value.(string)})
 	}
 }
 
 func (dep* DependentObjects) removeOrphanObjects() {
 	for key, item := range dep.DepObj {
-		if len(item) == 1 {
+		if len(item.([]interface{})) == 1 {
 			delete(dep.DepObj, key)
 		}
 	}

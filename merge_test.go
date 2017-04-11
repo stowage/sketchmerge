@@ -210,19 +210,6 @@ func TestMergeDocuments_MergeByJSONPath1(t *testing.T) {
 		fmt.Printf("Error occured %v %v", err1, err2)
 	}
 
-	jsCompare := NewJsonStructureCompare()
-	jsCompare.Compare(jsonDoc1, jsonDoc2, "$")
-
-	jsCompare.Doc1Diffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, false)
-	jsCompare.Doc2Diffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, false)
-
-	jsCompare.Doc1SeqDiffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1SeqDiffs, true)
-	jsCompare.Doc2SeqDiffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2SeqDiffs, true)
-
-	compareInfo, _ := json.MarshalIndent(jsCompare, "", "  ")
-
-	fmt.Println(string(compareInfo))
-
 	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
 
 	mergeDoc.MergeByJSONPath(`$["layers"][2]["frame"]["constrainProportions"]`, `$["layers"][3]["frame"]["constrainProportions"]`)

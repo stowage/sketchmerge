@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"github.com/versions/sketchmerge"
+	"github.com/stowage/sketchmerge"
 	_"path/filepath"
 	_"encoding/json"
 )

@@ -1,7 +1,6 @@
 package sketchmerge
 
 
-
 import (
 	"fmt"
 	"os"
@@ -43,6 +42,7 @@ type MergeActionType uint8
 //File merge operations
 type FileMerge struct {
 	FileKey string `json:"file_key"`
+	FileExt string `json:"file_ext"`
 	IsDirectory bool `json:"is_directory"`
 	Action FileActionType `json:"file_copy_action"`
 	FileDiff JsonStructureCompare `json:"file_diff,omitempty"`
@@ -77,8 +77,11 @@ type JsonStructureCompare struct {
 	//key element for arrays elements to check their order
 	ObjectKeyName string `json:"seq_key,omitempty"`
 
-	DepDoc1 map[string]interface{} `json:"dep_src,omitempty"`
-	DepDoc2 map[string]interface{} `json:"dep_dst,omitempty"`
+	//Dependent objects for src document
+	DepDoc1 * DependentObjects `json:"dep_src,omitempty"`
+
+	//Dependent objects for dst document
+	DepDoc2 * DependentObjects `json:"dep_dst,omitempty"`
 
 }
 
@@ -119,7 +122,9 @@ func ExtractSketchDirStruct(baseDir string, newDir string) (SketchFileStruct, Sk
 func (fs*FileStructureMerge) FileSetChange(baseSet SketchFileStruct, newSet SketchFileStruct)  {
 	for key, item := range baseSet.fileSet {
 		mergeAction := new(FileMerge)
-		mergeAction.FileKey = key
+		mergeAction.FileExt = filepath.Ext(key)
+		mergeAction.FileKey = strings.TrimSuffix(key, mergeAction.FileExt)
+
 		_, ok := newSet.fileSet[key];
 
 		if ok {
@@ -145,25 +150,6 @@ func (fs*FileStructureMerge) FileSetChange(baseSet SketchFileStruct, newSet Sket
 func timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
 	log.Printf("%s took %s", name, elapsed)
-
-}
-
-func (jsc * JsonStructureCompare) addDependenceDoc1(key string, item interface{}, jsonpath string) {
-	if IsSketchID(key) {
-		jsc.addDepDoc1(key, jsonpath, "addDependence")
-	}
-	if IsSketchID(item) && key != jsc.ObjectKeyName {
-		jsc.addDepDoc1(item.(string), jsonpath, "addDependence")
-	}
-}
-
-func (jsc * JsonStructureCompare) addDependenceDoc2(key string, item interface{}, jsonpath string) {
-	if IsSketchID(key) {
-		jsc.addDepDoc2(key, jsonpath, "addDependence")
-	}
-	if IsSketchID(item) && key != jsc.ObjectKeyName {
-		jsc.addDepDoc2(item.(string), jsonpath, "addDependence")
-	}
 }
 
 //Compare properties of dictionary node
@@ -181,7 +167,7 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 	}
 
 	//go thru all properties of doc1
-
+	hasDiff := false
 	for key, item := range doc1TreeMap {
 
 
@@ -190,24 +176,45 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 			if __jsonpath1, __jsonpath2 ,ok := jsc.CompareDocuments(&item, &subtree, pathDoc1  + `["` + key + `"]`, pathDoc2  + `["` + key + `"]`); !ok {
 				jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareProperties")
 				jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareProperties")
+				hasDiff = true
 			}
 		} else {
 			jsc.addDoc2Diff("-" + pathDoc1 + `["` + key + `"]`,"", "CompareProperties")
 			jsc.addDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
+			hasDiff = true
 		}
 
-		jsc.addDependenceDoc1(key, item, pathDoc1  + `["` + key + `"]`)
+
 	}
 
+	if hasDiff {
+		for key, item := range doc1TreeMap {
+			if key != jsc.ObjectKeyName {
+				jsc.DepDoc1.AddDependentObject(doc1ObjectKeyValue, key, item, pathDoc1)
+			}
+		}
+	}
+
+
+	hasDiff = false
 	//collect only properties not doc1
-	for key, item:= range doc2TreeMap {
+	for key, _:= range doc2TreeMap {
 
 		if _, ok := doc1TreeMap[key]; !ok {
 			jsc.addDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
 			jsc.addDoc2Diff("+" + pathDoc2 + `["` + key + `"]`, pathDoc1, "CompareProperties")
+			hasDiff = true
 		}
-		jsc.addDependenceDoc2(key, item, pathDoc2  + `["` + key + `"]`)
 	}
+
+	if hasDiff {
+		for key, item := range doc2TreeMap {
+			if key != jsc.ObjectKeyName {
+				jsc.DepDoc2.AddDependentObject(doc2ObjectKeyValue, key, item, pathDoc2)
+			}
+		}
+	}
+
 	return pathDoc1, pathDoc2, true
 }
 
@@ -266,14 +273,6 @@ func CompareSequence(objectKeyName string, doc1TreeArray []interface{}, doc2Tree
 	return doc1Changes, doc2Changes
 }
 
-
-func (jsc * JsonStructureCompare) addDepDoc1(key string, jsonpathDoc2 interface{}, from string) {
-	jsc.DepDoc1[key] = jsonpathDoc2
-}
-
-func (jsc * JsonStructureCompare) addDepDoc2(key string, jsonpathDoc2 interface{}, from string) {
-	jsc.DepDoc2[key] = jsonpathDoc2
-}
 
 func (jsc * JsonStructureCompare) addDoc1Diff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
 	//log.Printf("doc1Diff: %v %v %v\n", from, jsonpathDoc1, jsonpathDoc2)
@@ -446,8 +445,8 @@ func NewJsonStructureCompare() *JsonStructureCompare {
 						make(map[string]interface{}),
 						make(map[string]interface{}),
 						"do_objectID",
-							make(map[string]interface{}),
-								make(map[string]interface{})}
+							&DependentObjects{make(map[string]interface{}), make(map[string]interface{})},
+							&DependentObjects{make(map[string]interface{}), make(map[string]interface{})}}
 }
 
 func Test(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}) {
