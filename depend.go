@@ -27,7 +27,6 @@ func BuildReg(regstr string) (*regexp.Regexp) {
 type DependentObj struct {
 	JsonPath string `json:"path,omitempty"`
 	Ref string `json:"ref,omitempty"`
-	Key string `json:"key,omitempty"`
 }
 
 type DependentObjects struct {
@@ -77,6 +76,7 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 		depMap = dep.DepObj
 	} else {
 		depKey = jsonpath
+		jsonpath = ""
 		depMap = dep.DepPath
 	}
 
@@ -85,7 +85,7 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 		if depItem == nil {
 			depItem = make([]interface{}, 0)
 		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Key:key, Ref:key})
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:key})
 	}
 
 	if IsSketchID(value) {
@@ -93,14 +93,6 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 		if depItem == nil {
 			depItem = make([]interface{}, 0)
 		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Key:key, Ref:value.(string)})
-	}
-}
-
-func (dep* DependentObjects) removeOrphanObjects() {
-	for key, item := range dep.DepObj {
-		if len(item.([]interface{})) == 1 {
-			delete(dep.DepObj, key)
-		}
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:value.(string)})
 	}
 }

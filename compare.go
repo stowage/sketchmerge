@@ -390,10 +390,8 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 	}
 
 	//set index change maps into differences map only for changed indeces
-	if len(doc1ChangesCopy) > 0 {
+	if len(doc1ChangesCopy) > 0 || len(doc2ChangesCopy) > 0{
 		jsc.addDoc1SeqDiff(pathDoc1, pathDoc2, "CompareSequence")
-	}
-	if len(doc2ChangesCopy) > 0 {
 		jsc.addDoc2SeqDiff(pathDoc2, pathDoc1, "CompareSequence")
 	}
 
