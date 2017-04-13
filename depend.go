@@ -29,6 +29,12 @@ type DependentObj struct {
 	Ref string `json:"ref,omitempty"`
 }
 
+type DependentMerge struct {
+	JsonPathSrc string `json:"path_src,omitempty"`
+	JsonPathDst string `json:"path_dst,omitempty"`
+	Ref string `json:"ref,omitempty"`
+}
+
 type DependentObjects struct {
 	DepObj map[string]interface{} `json:"dep_obj,omitempty"`
 	DepPath map[string]interface{} `json:"dep_path,omitempty"`
@@ -96,3 +102,72 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:value.(string)})
 	}
 }
+
+/*func (dep* DependentObjects) AddMergeDependentObject(key string, ref string, jsonpathSrc string, jsonpathDst string)  {
+
+
+}
+
+
+func (dep* DependentObjects) ResolveDependencies(filepath string, jsonpath string, doc map[string]interface{}) error {
+	var pageID = ""
+	var pageName = ""
+
+	var artboardID = ""
+	var artboardName = ""
+
+	var niceDesc = ""
+	var niceDescShort = ""
+
+	var layerID = ""
+	var layerName string = ""
+	var layerPath string = ""
+
+	srcSel, srcact, _ := Parse(key)
+	doc := doc1
+
+	if item == "" && srcact == ValueDelete {
+		doc = doc2
+	}
+
+	_, lastNode, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
+		if prevNode == nil {
+			layer := v.(map[string]interface{})
+			if layer != nil {
+				lname := layer["name"]
+				lid := layer["do_objectID"]
+				if lname == nil || lid == nil {
+					return true
+				}
+
+				pageName = lname.(string)
+				pageID = lid.(string)
+				layerPath = pageName
+
+			}
+		} else if prevNode.GetKey() == "layers" {
+			layer := v.(map[string]interface{})
+			if layer != nil {
+				lname := layer["name"]
+				lid := layer["do_objectID"]
+				if lname == nil || lid == nil {
+					return true
+				}
+
+
+				if layer["_class"] == "artboard" {
+					artboardName = lname.(string)
+					artboardID = lid.(string)
+					layerPath += "/" + artboardName
+				} else  {
+					layerName = lname.(string)
+					layerID = lid.(string)
+					layerPath += "/" + layerName
+				}
+			}
+
+		}
+		return true;
+	})
+
+}*/

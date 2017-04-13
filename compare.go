@@ -62,12 +62,6 @@ type JsonStructureCompare struct {
 	//differences for doc2 vs doc1 in jsonpath request
 	Doc2Diffs map[string]interface{} `json:"dst_to_src_diff,omitempty"`
 
-	//differences in sequence for doc1 vs doc2 in jsonpath request
-	Doc1SeqDiffs map[string]interface{} `json:"src_to_dst_seq_diff,omitempty"`
-
-	//differences in sequence for doc2 vs doc1 in jsonpath request
-	Doc2SeqDiffs map[string]interface{} `json:"dst_to_src_seq_diff,omitempty"`
-
 	//object relocation
 	Doc1ObjRelocate map[string]interface{} `json:"src_obj_relocate,omitempty"`
 
@@ -286,12 +280,12 @@ func (jsc * JsonStructureCompare) addDoc2Diff(jsonpathDoc1 string, jsonpathDoc2 
 
 func (jsc * JsonStructureCompare) addDoc1SeqDiff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
 	//log.Printf("doc1SeqDiff: %v %v %v\n", from, jsonpathDoc1, jsonpathDoc2)
-	jsc.Doc1SeqDiffs[jsonpathDoc1] = jsonpathDoc2
+	jsc.Doc1Diffs[jsonpathDoc1] = jsonpathDoc2
 }
 
 func (jsc * JsonStructureCompare) addDoc2SeqDiff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
 	//log.Printf("doc2SeqDiff: %v %v %v\n", from, jsonpathDoc1, jsonpathDoc2)
-	jsc.Doc2SeqDiffs[jsonpathDoc1] = jsonpathDoc2
+	jsc.Doc2Diffs[jsonpathDoc1] = jsonpathDoc2
 }
 
 func (jsc * JsonStructureCompare) addDoc1ObjectRelocated(objectKeyValue string, jsonpathDoc interface{}, from string) {
@@ -391,8 +385,8 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 	//set index change maps into differences map only for changed indeces
 	if len(doc1ChangesCopy) > 0 || len(doc2ChangesCopy) > 0{
-		jsc.addDoc1SeqDiff(pathDoc1, pathDoc2, "CompareSequence")
-		jsc.addDoc2SeqDiff(pathDoc2, pathDoc1, "CompareSequence")
+		jsc.addDoc1SeqDiff("^" + pathDoc1, "^" + pathDoc2, "CompareSequence")
+		jsc.addDoc2SeqDiff("^" + pathDoc2, "^" + pathDoc1, "CompareSequence")
 	}
 
 
@@ -438,8 +432,6 @@ func (jsc * JsonStructureCompare) Compare(doc1TreeMap map[string]interface{}, do
 func NewJsonStructureCompare() *JsonStructureCompare {
 	return &JsonStructureCompare{make(map[string]interface{}),
 				     make(map[string]interface{}),
-					make(map[string]interface{}),
-					make(map[string]interface{}),
 						make(map[string]interface{}),
 						make(map[string]interface{}),
 						"do_objectID",

@@ -293,6 +293,7 @@ func (li * SketchLayerInfo) SetDifference(diff SketchDiff, diffSrc string, diffD
 
 }
 
+
 func ProduceNiceDiff(doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, isSeqChange bool) map[string]interface{}  {
 
 	if diff==nil {
@@ -428,8 +429,6 @@ func CompareJSONNice(doc1File string, doc2File string) (*JsonStructureCompare, e
 	jsCompare.Doc1Diffs = ProduceNiceDiff(result1, result2, jsCompare.Doc1Diffs, false)
 	jsCompare.Doc2Diffs = ProduceNiceDiff(result2, result1, jsCompare.Doc2Diffs, false)
 
-	jsCompare.Doc1SeqDiffs = ProduceNiceDiff(result1, result2, jsCompare.Doc1SeqDiffs, true)
-	jsCompare.Doc2SeqDiffs = ProduceNiceDiff(result2, result1, jsCompare.Doc2SeqDiffs, true)
 
 	return jsCompare, nil
 }
@@ -563,45 +562,66 @@ func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{},
 	return result1, result2, nil
 }
 
+func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyName string, docDiffs map[string]interface{} ) error {
+
+	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
+	dstFilePath := workingDirV2 + string(os.PathSeparator) + fileName
+
+
+	jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
+
+	if err != nil {
+		return err
+	}
+
+	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
+
+	deleteActions := make(map[string]string)
+	seqDiff := make(map[string]string)
+	for key, item := range docDiffs {
+		if item == "" {
+			deleteActions[key] = ""
+		} else if !strings.HasPrefix(key, "^") {
+			seqDiff[key] = item.(string)
+		} else {
+			mergeDoc.MergeByJSONPath(key, item.(string))
+		}
+	}
+
+	for key, _ := range deleteActions {
+		mergeDoc.MergeByJSONPath("", key)
+	}
+
+	for key, item := range seqDiff {
+		mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item)
+	}
+
+	data, err := json.Marshal(mergeDoc.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	WriteToFile(dstFilePath, data)
+
+	return nil
+}
+
 func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
 
 	for i := range mergeJSON.MergeActions {
-		srcFilePath := workingDirV1 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
-		dstFilePath := workingDirV2 + string(os.PathSeparator) + mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
-		jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
 
-		if err != nil {
+		if mergeJSON.MergeActions[i].FileDiff.Doc1Diffs == nil {
 			continue
 		}
 
-		mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
-
-		if mergeJSON.MergeActions[i].FileDiff.Doc1Diffs != nil {
-			deleteActions := make(map[string]string)
-			for key, item := range mergeJSON.MergeActions[i].FileDiff.Doc1Diffs {
-				if item == "" {
-					deleteActions[key] = ""
-				} else {
-					mergeDoc.MergeByJSONPath(key, item.(string))
-				}
-			}
-
-			for key, _ := range deleteActions {
-				mergeDoc.MergeByJSONPath("", key)
-			}
-
-			for key, item := range mergeJSON.MergeActions[i].FileDiff.Doc1SeqDiffs {
-				mergeDoc.MergeSequenceByJSONPath(mergeJSON.MergeActions[i].FileDiff.ObjectKeyName, key, item.(string))
-			}
-
-			data, err := json.Marshal(mergeDoc.DstDocument)
-
-			if err != nil {
-				return err
-			}
-
-			WriteToFile(dstFilePath, data)
+		if err := merge(workingDirV1, workingDirV2,
+			mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt,
+			mergeJSON.MergeActions[i].FileDiff.ObjectKeyName,
+			mergeJSON.MergeActions[i].FileDiff.Doc1Diffs); err!=nil {
+			continue
 		}
+
 	}
 	return nil
 }

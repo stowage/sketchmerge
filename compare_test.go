@@ -216,8 +216,8 @@ func TestJsonStructureCompare_Compare(t *testing.T) {
 	jsCompare.Doc1Diffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, false)
 	jsCompare.Doc2Diffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, false)
 
-	jsCompare.Doc1SeqDiffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1SeqDiffs, true)
-	jsCompare.Doc2SeqDiffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2SeqDiffs, true)
+	//jsCompare.Doc1SeqDiffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1SeqDiffs, true)
+	//jsCompare.Doc2SeqDiffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2SeqDiffs, true)
 
 	compareInfo, _ := json.MarshalIndent(jsCompare, "", "  ")
 

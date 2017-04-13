@@ -51,6 +51,7 @@ var (
 	SyntaxError       = errors.New("Bad Syntax.")
 	NotFound          = errors.New("Not Found")
 	IndexOutOfBounds  = errors.New("Out of Bounds")
+	InvalidMergeAction= errors.New("Invalid merge action")
 )
 
 func applyNext(nn Node, prevnn Node, v interface{}, e NodeEvent) (interface{}, Node,  error) {
@@ -197,6 +198,9 @@ func normalize(s string) string {
 	} else if s[0] == '+' {
 		r = "+"
 		s = s[1:]
+	} else if s[0] == '^' {
+		r = "^"
+		s = s[1:]
 	}
 
 	r += "$"
@@ -206,6 +210,7 @@ func normalize(s string) string {
 	}
 
 	for len(s) > 0 {
+
 
 		// Grab the bracketed entries
 		for len(s) > 0 && s[0] == '[' {
@@ -274,6 +279,9 @@ func Parse(s string) (Node, ApplyAction, error) {
 	} else if s[0] == '+' {
 		s = s[1:]
 		action = ValueAdd
+	} else if s[0] == '^' {
+		s = s[1:]
+		action = SequenceChange
 	}
 
 	s = s[1:]
@@ -472,6 +480,11 @@ func (md * MergeDocuments) deleteMapElement(dstNode Node) error {
 
 func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string) error {
 
+	if strings.HasPrefix(srcPath, "^") {
+
+		return InvalidMergeAction
+	}
+
 	srcSel, srcact, srcerr := Parse(srcPath)
 	dstSel, dstact, dsterr := Parse(dstPath)
 
@@ -527,6 +540,11 @@ func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string) error
 }
 
 func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath string, dstPath string) error {
+
+	if !strings.HasPrefix(srcPath, "^") {
+
+		return InvalidMergeAction
+	}
 
 	srcSel, _, srcerr := Parse(srcPath)
 	dstSel, _, dsterr := Parse(dstPath)
