@@ -581,7 +581,7 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 	for key, item := range docDiffs {
 		if item == "" {
 			deleteActions[key] = ""
-		} else if !strings.HasPrefix(key, "^") {
+		} else if strings.HasPrefix(key, "^") {
 			seqDiff[key] = item.(string)
 		} else {
 			mergeDoc.MergeByJSONPath(key, item.(string))
