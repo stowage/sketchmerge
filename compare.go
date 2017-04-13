@@ -326,6 +326,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			//if there is no such element in doc2 array
 			jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
 			jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
+			jsc.DepDoc2.AddDependentPath( "-" + jsonpathDoc1, "^" + pathDoc2, pathDoc2)
 		} else if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc2]), jsonpathDoc1, jsonpathDoc2); !ok {
 			jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
 			jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
@@ -344,6 +345,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			//if there is no such element in doc1 array
 			jsc.addDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
 			jsc.addDoc2Diff("+" + jsonpathDoc2, pathDoc1, "CompareSlices")
+			jsc.DepDoc1.AddDependentPath( "-" + jsonpathDoc2, "^" + pathDoc1, pathDoc1)
 		}
 	}
 
@@ -376,6 +378,8 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 					if idxDoc2 >= len(doc1TreeArray) {
 						jsc.addDoc1Diff("-"+jsonpathDoc2, "", "CompareSlices")
 						jsc.addDoc2Diff("+"+jsonpathDoc2, pathDoc1, "CompareSlices")
+
+
 						continue
 					}
 				}

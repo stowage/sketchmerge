@@ -101,6 +101,23 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 		}
 		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:value.(string)})
 	}
+
+
+}
+
+func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath string)  {
+
+	var depKey string = key
+	var depMap map[string]interface{} = dep.DepPath
+
+	depItem := depMap[depKey]
+	if depItem == nil {
+		depItem = make([]interface{}, 0)
+	}
+	depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:value})
+
+
+
 }
 
 /*func (dep* DependentObjects) AddMergeDependentObject(key string, ref string, jsonpathSrc string, jsonpathDst string)  {
