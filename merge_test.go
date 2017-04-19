@@ -223,7 +223,7 @@ func TestMergeDocuments_MergeByJSONPath1(t *testing.T) {
 	mergeDoc.MergeByJSONPath(`$["fonts"][8]`, `$["fonts"][8]`)
 	mergeDoc.MergeByJSONPath(`+$["fonts"][12]`, `$["fonts"]`)
 	mergeDoc.MergeByJSONPath("", `-$["layers"][4]`)
-	mergeDoc.MergeSequenceByJSONPath("do_objectID",`$["layers"]`, `$["layers"]`)
+	mergeDoc.MergeSequenceByJSONPath("do_objectID",`^$["layers"]`, `^$["layers"]`)
 
 	mergeInfo2, _ := json.MarshalIndent(mergeDoc.DstDocument, "", "  ")
 

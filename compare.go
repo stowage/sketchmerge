@@ -25,6 +25,7 @@ type SketchFileStruct struct {
 	fileSet map[string] interface{}
 	name string
 }
+type IVoid interface {}
 
 // Sketch file structure comparison
 type FileActionType uint8
@@ -146,12 +147,20 @@ func timeTrack(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
+func (jsc * JsonStructureCompare) AddDependentObjects(docTreeMap map[string]interface{}, dep * DependentObjects, jsonpath string)  {
+	for key, item := range docTreeMap {
+		dep.AddDependentObject(nil, key, item, jsonpath)
+	}
+}
+
 //Compare properties of dictionary node
 func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]interface{}, doc2TreeMap map[string]interface{}, pathDoc1 string, pathDoc2 string)  (string, string, bool) {
 	//defer timeTrack(time.Now(), "CompareProperties " + path)
 
 	doc1ObjectKeyValue := doc1TreeMap[jsc.ObjectKeyName];
 	doc2ObjectKeyValue := doc2TreeMap[jsc.ObjectKeyName];
+
+	//fmt.Printf("keys: %v %v\n", doc1ObjectKeyValue, doc2ObjectKeyValue)
 
 	if doc1ObjectKeyValue != nil && doc2ObjectKeyValue != nil {
 		if doc1ObjectKeyValue != doc2ObjectKeyValue || pathDoc1 != pathDoc2 {
@@ -163,7 +172,6 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 	//go thru all properties of doc1
 	hasDiff := false
 	for key, item := range doc1TreeMap {
-
 
 		if subtree, ok := doc2TreeMap[key]; ok {
 			//if it has a difference append to difference map
@@ -193,7 +201,6 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 	hasDiff = false
 	//collect only properties not doc1
 	for key, _:= range doc2TreeMap {
-
 		if _, ok := doc1TreeMap[key]; !ok {
 			jsc.addDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
 			jsc.addDoc2Diff("+" + pathDoc2 + `["` + key + `"]`, pathDoc1, "CompareProperties")
@@ -260,7 +267,7 @@ func CompareSequence(objectKeyName string, doc1TreeArray []interface{}, doc2Tree
 			doc2Changes[idxDoc2] = -1
 		}
 
-		//log.Println("doc2Changes:"+ path + ":" + strconv.Itoa(len(keysDoc2)) +":" + strconv.Itoa(idxDoc2) +":"+ strconv.Itoa(doc2Changes[idxDoc2]) )
+		//log.Println("doc2Changes:" + strconv.Itoa(len(keysDoc2)) +":" + strconv.Itoa(idxDoc2) +":"+ strconv.Itoa(doc2Changes[idxDoc2]) )
 	}
 
 
@@ -326,7 +333,8 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			//if there is no such element in doc2 array
 			jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
 			jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
-			jsc.DepDoc2.AddDependentPath( "-" + jsonpathDoc1, "^" + pathDoc2, pathDoc2)
+			jsc.DepDoc2.AddDependentPath( "-" + jsonpathDoc1, "^" + pathDoc1, "^" + pathDoc2)
+			jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), nil, jsonpathDoc1, "");
 		} else if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc2]), jsonpathDoc1, jsonpathDoc2); !ok {
 			jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
 			jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
@@ -345,7 +353,10 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			//if there is no such element in doc1 array
 			jsc.addDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
 			jsc.addDoc2Diff("+" + jsonpathDoc2, pathDoc1, "CompareSlices")
-			jsc.DepDoc1.AddDependentPath( "-" + jsonpathDoc2, "^" + pathDoc1, pathDoc1)
+			jsc.DepDoc1.AddDependentPath( "-" + jsonpathDoc2, "^" + pathDoc2, "^" + pathDoc1)
+			jsc.CompareDocuments(nil, &(doc2TreeArray[idxDoc2]), "", jsonpathDoc2);
+
+
 		}
 	}
 
@@ -400,6 +411,25 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 func (jsc * JsonStructureCompare) CompareDocuments(doc1 *interface{}, doc2 *interface{}, pathDoc1 string, pathDoc2 string) (string, string, bool) {
 	//defer timeTrack(time.Now(), "CompareDocuments " + path)
 	//try to convert to json type doc1
+	if doc1 == nil {
+		doc2TreeMap, isDoc2Map := (*doc2).(map[string]interface{})
+		if isDoc2Map {
+			//if second is dictionary add dependent object
+			jsc.AddDependentObjects(doc2TreeMap, jsc.DepDoc2, pathDoc2)
+			return pathDoc1, pathDoc2, false;
+		}
+		return pathDoc1, pathDoc2, true;
+	}
+
+	if doc2 == nil {
+		doc1TreeMap, isDoc1Map := (*doc1).(map[string]interface{})
+		if isDoc1Map {
+			//if first is dictionary add dependent object
+			jsc.AddDependentObjects(doc1TreeMap, jsc.DepDoc1, pathDoc1)
+			return pathDoc1, pathDoc2, false;
+		}
+		return pathDoc1, pathDoc2, true;
+	}
 
 	doc1TreeMap, isDoc1Map := (*doc1).(map[string]interface{})
 	doc1TreeArray, isDoc1Array := (*doc1).([]interface{})
@@ -414,9 +444,15 @@ func (jsc * JsonStructureCompare) CompareDocuments(doc1 *interface{}, doc2 *inte
 	} else if isDoc1Map && isDoc2Map {
 		//if both documents are dictionaries compare their properties
 		return jsc.CompareProperties(doc1TreeMap, doc2TreeMap, pathDoc1, pathDoc2)
+	} else if isDoc1Map && !isDoc2Map {
+		//if first is dictionary add dependent object
+		jsc.AddDependentObjects(doc1TreeMap, jsc.DepDoc1, pathDoc1)
+	} else if !isDoc1Map && isDoc2Map {
+		//if second is dictionary add dependent object
+		jsc.AddDependentObjects(doc2TreeMap, jsc.DepDoc2, pathDoc2)
 	} else if !isDoc1Array && !isDoc1Map && !isDoc2Array && !isDoc2Map {
 		//if values are not maps or arrays compare them by default
-
+		//fmt.Printf("keys: %v %v\n", *doc1, *doc2)
 		if *doc1 != *doc2 {
 			return pathDoc1 /*+ "+"*/, pathDoc2 /*+ "+"*/ /*+ fmt.Sprintf("%s", (*doc1), (*doc2))*/, false
 		}

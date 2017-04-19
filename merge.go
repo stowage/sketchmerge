@@ -28,6 +28,8 @@ type Node interface {
 	GetNext() Node
 	GetPrev() Node
 	GetLast() Node
+	GetFileName() string
+ 	GetFileAction() (FileActionType)
 
 }
 
@@ -74,6 +76,8 @@ type RootNode struct {
 	NextNode Node
 	PrevNode Node
 	LastNode Node
+	FileName string
+	fileAction FileActionType
 }
 
 func (r *RootNode) SetNext(n Node) {
@@ -98,6 +102,15 @@ func (r *RootNode) GetNext() (Node) {
 
 func (r *RootNode) SetLast(n Node) {
 	r.LastNode = n
+}
+
+
+func (r *RootNode) GetFileName() (string) {
+	return r.FileName
+}
+
+func (r *RootNode) GetFileAction() (FileActionType) {
+	return r.fileAction
 }
 
 func (r *RootNode) Apply(v interface{}) ( interface{}, Node, error) {
@@ -192,6 +205,77 @@ func normalize(s string) string {
 	}
 	r := ""
 
+	if s[0] == '~' {
+		r="~"
+		s = s[1:]
+		n := strings.Index(s, "~")
+		r += s[0 : n+1]
+		s = s[n+1:]
+	}
+
+	if s[0] == '-' {
+		r = "-"
+		s = s[1:]
+	} else if s[0] == '+' {
+		r = "+"
+		s = s[1:]
+	} else if s[0] == '^' {
+		r = "^"
+		s = s[1:]
+	}
+
+	r += "$"
+
+	if s[0] == '$' {
+		s = s[1:]
+	}
+
+	for len(s) > 0 {
+
+
+		// Grab the bracketed entries
+		for len(s) > 0 && s[0] == '[' {
+			n := strings.Index(s, "]")
+			r += s[0 : n+1]
+			s = s[n+1:]
+		}
+		if len(s) <= 0 {
+			break
+		}
+
+		n := minNotNeg1(strings.Index(s, "["))
+		if n == 0 {
+			continue
+		}
+		if n != -1 {
+			r += `["` + s[:n] + `"]`
+			s = s[n:]
+		} else {
+			r += `["` + s + `"]`
+			s = ""
+		}
+
+	}
+	return r
+}
+
+
+func FlatJsonPath(s string) string {
+	if s == "" {
+		return "$"
+	}
+	r := ""
+
+	if s[0] == '~' {
+		s = s[1:]
+		n := strings.Index(s, "~")
+		s = s[n+1:]
+	}
+
+	if s == "" {
+		return ""
+	}
+
 	if s[0] == '-' {
 		r = "-"
 		s = s[1:]
@@ -271,7 +355,25 @@ func Parse(s string) (Node, ApplyAction, error) {
 	var err error
 	var action ApplyAction = ValueChange
 	s = normalize(s)
-	rt := RootNode{nil, nil, nil}
+	var FileName string
+	var fileAction FileActionType = MERGE
+
+	if s[0] == 'A' {
+		s = s[1:]
+		fileAction = ADD
+	} else if s[0] == 'D' {
+		s = s[1:]
+		fileAction = DELETE
+	}
+
+	if s[0] == '~' {
+		s = s[1:]
+		n := strings.Index(s, "~")
+		FileName = s[0 : n]
+		s = s[n+1:]
+	}
+
+	rt := RootNode{nil, nil, nil, FileName, fileAction}
 
 	if s[0] == '-' {
 		s = s[1:]
@@ -397,7 +499,6 @@ func (md * MergeDocuments) deleteArrayElement(dstNode Node) error {
 
 	index := lastDstNode.GetKey().(int)
 	finArr := append(fordst.([]interface{})[:index], fordst.([]interface{})[index+1:]...)
-	//fmt.Printf("Err: %v %v\n", arrLastNode.GetKey(), findst)
 	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
 	return nil
 }

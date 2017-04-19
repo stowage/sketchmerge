@@ -5,6 +5,9 @@ import (
 	"strings"
 	"log"
 	"time"
+	"path/filepath"
+	"os"
+	_"fmt"
 )
 const GuidFormat = "^[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
 
@@ -27,6 +30,7 @@ func BuildReg(regstr string) (*regexp.Regexp) {
 type DependentObj struct {
 	JsonPath string `json:"path,omitempty"`
 	Ref string `json:"ref,omitempty"`
+	FileKey string `json:"file_key,omitempty"`
 }
 
 type DependentMerge struct {
@@ -77,35 +81,71 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 	var depKey string
 	var depMap map[string]interface{}
 
+	isKeyObjectID := IsSketchID(key)
+	isValueObjectID := IsSketchID(value)
+
+	isObjID := false
 	if objKey != nil {
 		depKey = objKey.(string)
 		depMap = dep.DepObj
+		isObjID = true
+	} else if isKeyObjectID {
+		depKey = key
+		depMap = dep.DepObj
+
+	} else if isValueObjectID {
+		depKey = value.(string)
+		depMap = dep.DepObj
+
 	} else {
 		depKey = jsonpath
 		jsonpath = ""
 		depMap = dep.DepPath
+
 	}
 
-	if IsSketchID(key) {
+	if isObjID {
 		depItem := depMap[depKey]
 		if depItem == nil {
 			depItem = make([]interface{}, 0)
 		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:key})
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
 	}
 
-	if IsSketchID(value) {
+	if isKeyObjectID {
 		depItem := depMap[depKey]
 		if depItem == nil {
 			depItem = make([]interface{}, 0)
 		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath, Ref:value.(string)})
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
 	}
+
+	if isValueObjectID {
+		depItem := depMap[depKey]
+		if depItem == nil {
+			depItem = make([]interface{}, 0)
+		}
+		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
+	}
+
+}
+
+func (dep* DependentObjects) AddDependent(depKey string, jsonpath1 string, jsonpath2 string, fileKey string)  {
+
+	depMap := dep.DepObj
+
+	depItem := depMap[depKey]
+	if depItem == nil {
+		depItem = make([]interface{}, 0)
+	}
+	depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath2, Ref:jsonpath1, FileKey:fileKey})
 
 
 }
 
+
 func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath string)  {
+
 
 	var depKey string = key
 	var depMap map[string]interface{} = dep.DepPath
@@ -120,71 +160,126 @@ func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath
 
 }
 
-/*func (dep* DependentObjects) AddMergeDependentObject(key string, ref string, jsonpathSrc string, jsonpathDst string)  {
+func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string, jsonpath1 string, jsonpath2 string, doc map[string]interface{}) error {
+	srcSel, _, err1 := Parse(jsonpath1)
 
+	if err1 != nil {
+		return err1
 
-}
+	}
+	fileJsonPath1 := ""
 
+	if filepath != "" {
 
-func (dep* DependentObjects) ResolveDependencies(filepath string, jsonpath string, doc map[string]interface{}) error {
-	var pageID = ""
-	var pageName = ""
-
-	var artboardID = ""
-	var artboardName = ""
-
-	var niceDesc = ""
-	var niceDescShort = ""
-
-	var layerID = ""
-	var layerName string = ""
-	var layerPath string = ""
-
-	srcSel, srcact, _ := Parse(key)
-	doc := doc1
-
-	if item == "" && srcact == ValueDelete {
-		doc = doc2
+		fileJsonPath1 = "~" + filepath + "~" + jsonpath1
+	} else {
+		fileJsonPath1 = jsonpath1
 	}
 
-	_, lastNode, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
-		if prevNode == nil {
-			layer := v.(map[string]interface{})
-			if layer != nil {
-				lname := layer["name"]
-				lid := layer["do_objectID"]
-				if lname == nil || lid == nil {
-					return true
-				}
+	fileJsonPath2 := ""
 
-				pageName = lname.(string)
-				pageID = lid.(string)
-				layerPath = pageName
+	if filepath != "" {
+
+		fileJsonPath2 = "~" + filepath + "~" + jsonpath2
+	} else {
+		fileJsonPath2 = jsonpath2
+	}
+
+	_, _, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
+		layer, isLayer := v.(map[string]interface{})
+		if isLayer {
+			if layer["_class"] == "symbolMaster" {
+				sid := layer["symbolID"]
+				if sid != nil {
+					dep.AddDependent(sid.(string), fileJsonPath2, fileJsonPath1, fileKey)
+				}
 
 			}
-		} else if prevNode.GetKey() == "layers" {
-			layer := v.(map[string]interface{})
-			if layer != nil {
-				lname := layer["name"]
-				lid := layer["do_objectID"]
-				if lname == nil || lid == nil {
-					return true
-				}
+			lid := layer["do_objectID"]
 
+			var objectID string
 
-				if layer["_class"] == "artboard" {
-					artboardName = lname.(string)
-					artboardID = lid.(string)
-					layerPath += "/" + artboardName
-				} else  {
-					layerName = lname.(string)
-					layerID = lid.(string)
-					layerPath += "/" + layerName
+			if lid == nil {
+				key := node.GetKey()
+				if IsSketchID(key) {
+					objectID = key.(string)
 				}
+				return true
 			}
+			//fmt.Printf("do_objId: %v %v\n", filepath, lid)
+			objectID = lid.(string)
+
+			dep.AddDependent(objectID, fileJsonPath2, fileJsonPath1, fileKey)
+
 
 		}
+
 		return true;
 	})
 
-}*/
+	if err != nil {
+		return err
+	}
+
+
+
+
+
+	return nil
+}
+
+
+func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, workingPathV2 string, mergeActions []FileMerge) (map[string]interface{},error) {
+
+	fileMap1 := make(map[string]interface{})
+
+	for i := range mergeActions {
+		fileMap1[mergeActions[i].FileKey + mergeActions[i].FileExt] = mergeActions[i]
+		if filepath.Ext(strings.ToLower(mergeActions[i].FileKey + mergeActions[i].FileExt)) == ".json" {
+			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
+			if mergeActions[i].Action == ADD {
+				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
+					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
+					jsonFilePath := "~" + fullFilePath + "~$"
+					dep.AddDependent(objectID, "A" + jsonFilePath, "A" + jsonFilePath, mergeActions[i].FileKey)
+				} else {
+					jsonFilePath := "A~" + fullFilePath + "~$"
+					dep.AddDependent( mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
+				}
+			} else if mergeActions[i].Action == DELETE {
+				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
+					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
+					jsonFilePath := "D~" + fullFilePath + "~$"
+					dep.AddDependent(objectID, jsonFilePath, jsonFilePath,mergeActions[i].FileKey)
+				} else {
+					jsonFilePath := "D~" + fullFilePath + "~$"
+					dep.AddDependent(mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
+				}
+			} else {
+
+				if mergeActions[i].FileDiff.Doc1Diffs == nil {
+					continue
+				}
+
+				if _, err := os.Stat(workingPathV1 + string(os.PathSeparator) + fullFilePath); os.IsNotExist(err) {
+					continue
+				}
+
+				result, err := readJSON(workingPathV1 + string(os.PathSeparator) + fullFilePath)
+
+				if err != nil {
+					return nil, err
+				}
+
+				for key, item := range mergeActions[i].FileDiff.Doc1Diffs {
+					if err := dep.ResolveDependencies(mergeActions[i].FileKey, fullFilePath, key, item.(string), result); err!=nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+
+	return fileMap1, nil
+}
+

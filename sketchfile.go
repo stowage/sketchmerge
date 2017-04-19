@@ -27,13 +27,15 @@ type SketchLayerInfo struct {
 }
 
 type Difference interface {
-	SetDiff(src string, dst string, niceDescShort string, niceDesc string)
+	SetDiff(action string, src string, dst string, niceDescShort string, niceDesc string)
 }
 
 type MainDiff struct {
 	Description map[string]string `json:"description,omitempty"`
 	Diff map[string]interface{} `json:"diff,omitempty"`
+	action string `json:"action,omitempty"`
 	Difference `json:"-"`
+	
 }
 
 type SketchLayerDiff struct {
@@ -59,10 +61,12 @@ type SketchDiff struct {
 }
 
 
-func (sd* MainDiff) SetDiff(src string, dst string, niceDescShort string, niceDesc string) {
+func (sd* MainDiff) SetDiff(action string, src string, dst string, niceDescShort string, niceDesc string) {
+	sd.Description["action"] = action
 	sd.Description["nice_description_short"] = niceDescShort
 	sd.Description["nice_description"] = niceDesc
 	sd.Diff[src] = dst
+
 
 }
 
@@ -130,6 +134,8 @@ func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error
 
 
 	jsCompare.Compare(result1, result2, "$")
+
+
 
 	return jsCompare, nil
 }
@@ -248,7 +254,7 @@ func getNiceTextForLayer(srcact ApplyAction, layerName string, pageName string, 
 }
 
 
-func (li * SketchLayerInfo) SetDifference(diff SketchDiff, diffSrc string, diffDst string) {
+func (li * SketchLayerInfo) SetDifference(action string, diff SketchDiff, diffSrc string, diffDst string) {
 
 	var page interface{}
 	var artboard interface{}
@@ -263,6 +269,7 @@ func (li * SketchLayerInfo) SetDifference(diff SketchDiff, diffSrc string, diffD
 			diff.PageDiff[li.PageID] = page
 		}
 		_page := page.(SketchPageDiff)
+
 		actual = &_page
 	}
 
@@ -274,6 +281,7 @@ func (li * SketchLayerInfo) SetDifference(diff SketchDiff, diffSrc string, diffD
 			page.(SketchPageDiff).ArtboardDiff[li.ArtboardID] = artboard
 		}
 		_artboard := artboard.(SketchArtboardDiff)
+
 		actual = &_artboard
 	}
 
@@ -285,11 +293,12 @@ func (li * SketchLayerInfo) SetDifference(diff SketchDiff, diffSrc string, diffD
 			artboard.(SketchArtboardDiff).LayerDiff[li.LayerID] = layer
 		}
 		_layer := layer.(SketchLayerDiff)
+
 		actual = &_layer
 	}
 
 
-	actual.SetDiff(diffSrc, diffDst, li.NiceDescriptionShort, li.NiceDescription)
+	actual.SetDiff(action, diffSrc, diffDst, li.NiceDescriptionShort, li.NiceDescription)
 
 }
 
@@ -383,13 +392,25 @@ func ProduceNiceDiff(doc1 map[string]interface{}, doc2 map[string]interface{}, d
 			niceDescShort, niceDesc = getNiceTextForUnknown(srcact, fmt.Sprintf("%v", lastNode.GetKey()))
 		}
 
+		action := ""
+
+		switch srcact {
+		case ValueAdd:
+			action = "ValueAdd"
+		case ValueChange:
+			action = "ValueChange"
+		case ValueDelete:
+			action = "ValueDelete"
+		case SequenceChange:
+			action = "SequenceChange"
+		}
 
 		diff := SketchLayerInfo{layerName, layerID,
 			artboardName, artboardID,
 			pageName, pageID,
 			niceDescShort, niceDesc}
 
-		diff.SetDifference(skDiff, key, item.(string))
+		diff.SetDifference(action, skDiff, key, item.(string))
 
 	}
 
@@ -435,6 +456,54 @@ func CompareJSONNice(doc1File string, doc2File string) (*JsonStructureCompare, e
 
 func WriteToFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0755 )
+}
+
+func addDependencies(fileKey string, depObj * DependentObjects, docDep * DependentObjects, fileMap map[string]interface{}) (*DependentObjects) {
+	if docDep == nil {
+		docDep = &DependentObjects{make(map[string]interface{}),make(map[string]interface{})}
+	}
+	for key, value := range docDep.DepObj {
+
+		iPaths := depObj.DepObj[key]
+
+		if iPaths == nil {
+			continue
+		}
+		depPaths := iPaths.([]interface{})
+		paths := value.([]interface{})
+		for k := range paths {
+
+			for j := range depPaths {
+
+				//fmt.Printf("%v %v %v %v\n", paths[k], depPaths[j], depPaths[j], fsMerge.MergeActions[i].FileDiff)
+				if depPaths[j].(DependentObj).FileKey != fileKey {
+					docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, depPaths[j].(DependentObj).Ref, depPaths[j].(DependentObj).JsonPath)
+				} else {
+					ref := FlatJsonPath(depPaths[j].(DependentObj).Ref)
+					jsonpath := FlatJsonPath(depPaths[j].(DependentObj).JsonPath)
+					if jsonpath != "" {
+						docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, ref, jsonpath)
+					}
+				}
+			}
+
+		}
+	}
+	return docDep
+}
+
+func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) {
+
+	depObj := DependentObjects{make(map[string]interface{}), make(map[string]interface{})}
+
+	fileMap := depObj.buildDependencePaths(workingDirV1, workingDirV2, fileMerge)
+
+	info, _ := json.MarshalIndent(depObj, "", "  ")
+	fmt.Printf("%v\n", string(info))
+
+	for i := range fileMerge {
+		fileMerge[i].FileDiff.DepDoc1 = addDependencies(fileMerge[i].FileKey, &depObj, fileMerge[i].FileDiff.DepDoc1)
+	}
 }
 
 func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]byte, error) {
@@ -496,27 +565,35 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 	fsMerge := new(FileStructureMerge)
 	fsMerge.FileSetChange(baseFileStruct, newFileStruct)
 
+
+
+
+
 	if !isNice {
 		for i := range fsMerge.MergeActions {
-			//fmt.Printf("ext: %v", filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)))
 			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
-				result, err := CompareJSON(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
+				result, err := CompareJSON(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
 				if err != nil {
 					return nil, err
 				}
 				fsMerge.MergeActions[i].FileDiff = *result
+
+
 			}
 		}
 
+		ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions)
 
 		mergeInfo, _ := json.MarshalIndent(fsMerge, "", "  ")
 
 		return mergeInfo, nil
 	} else {
+
+
+
 		for i := range fsMerge.MergeActions {
-			//fmt.Printf("ext: %v", filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey)))
 			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
-				result, err := CompareJSONNice(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + "/" + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
+				result, err := CompareJSONNice(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
 				if err != nil {
 					return nil, err
 				}
