@@ -76,7 +76,7 @@ func IsSketchID(value interface{}) bool {
 	return DetectID(value)
 }
 
-func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, value interface{}, jsonpath string)  {
+func (dep* DependentObjects) AddDependentObject(key string, value interface{}, jsonpath string)  {
 
 	var depKey string
 	var depMap map[string]interface{}
@@ -84,12 +84,7 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 	isKeyObjectID := IsSketchID(key)
 	isValueObjectID := IsSketchID(value)
 
-	isObjID := false
-	if objKey != nil {
-		depKey = objKey.(string)
-		depMap = dep.DepObj
-		isObjID = true
-	} else if isKeyObjectID {
+	if isKeyObjectID {
 		depKey = key
 		depMap = dep.DepObj
 
@@ -104,21 +99,17 @@ func (dep* DependentObjects) AddDependentObject(objKey interface{}, key string, 
 
 	}
 
-	if isObjID {
-		depItem := depMap[depKey]
-		if depItem == nil {
-			depItem = make([]interface{}, 0)
-		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
+	if strings.HasPrefix(depKey, "pages/") {
+		depKey = strings.TrimPrefix(depKey, "pages/")
 	}
 
-	if isKeyObjectID {
+	/*if isKeyObjectID {
 		depItem := depMap[depKey]
 		if depItem == nil {
 			depItem = make([]interface{}, 0)
 		}
 		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
-	}
+	}*/
 
 	if isValueObjectID {
 		depItem := depMap[depKey]
@@ -162,10 +153,14 @@ func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath
 
 func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string, jsonpath1 string, jsonpath2 string, doc map[string]interface{}) error {
 	srcSel, _, err1 := Parse(jsonpath1)
-
+	//fmt.Printf("jsonpath: %v\n", jsonpath1)
 	if err1 != nil {
 		return err1
 
+	}
+
+	if jsonpath2 == "" {
+		return nil
 	}
 	fileJsonPath1 := ""
 
@@ -203,6 +198,7 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 				key := node.GetKey()
 				if IsSketchID(key) {
 					objectID = key.(string)
+					dep.AddDependent(objectID, fileJsonPath2, fileJsonPath1, fileKey)
 				}
 				return true
 			}
@@ -234,7 +230,7 @@ func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, working
 	fileMap1 := make(map[string]interface{})
 
 	for i := range mergeActions {
-		fileMap1[mergeActions[i].FileKey + mergeActions[i].FileExt] = mergeActions[i]
+		fileMap1[mergeActions[i].FileKey] = mergeActions[i]
 		if filepath.Ext(strings.ToLower(mergeActions[i].FileKey + mergeActions[i].FileExt)) == ".json" {
 			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
 			if mergeActions[i].Action == ADD {

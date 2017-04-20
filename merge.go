@@ -4,12 +4,17 @@ import (
 	"errors"
 	"io"
 	_"fmt"
-	_ "encoding/json"
 	_ "reflect"
 	_ "sort"
 	"strconv"
 	"strings"
 	"log"
+	"io/ioutil"
+	"encoding/json"
+	"bytes"
+	"os"
+	"path/filepath"
+
 )
 
 type NodeEvent func(interface{}, Node, Node) bool
@@ -205,8 +210,16 @@ func normalize(s string) string {
 	}
 	r := ""
 
+	if s[0] == 'A' {
+		r += "A"
+		s = s[1:]
+	} else if s[0] == 'D' {
+		r += "D"
+		s = s[1:]
+	}
+
 	if s[0] == '~' {
-		r="~"
+		r += "~"
 		s = s[1:]
 		n := strings.Index(s, "~")
 		r += s[0 : n+1]
@@ -259,12 +272,68 @@ func normalize(s string) string {
 	return r
 }
 
+func ReadFileKey(s string) string {
 
-func FlatJsonPath(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	r := ""
+
+	if s[0] == 'A' {
+		s = s[1:]
+	} else if s[0] == 'D' {
+		s = s[1:]
+	}
+
+	if s[0] == '~' {
+		s = s[1:]
+		n := strings.Index(s, "~")
+		r += s[0 : n]
+		return r
+	}
+
+	return ""
+}
+
+func ReadFileAction(s string) string {
+
+	if s == "" {
+		return ""
+	}
+
+	r := ""
+
+	if s[0] == 'A' {
+		r += "A"
+		s = s[1:]
+	} else if s[0] == 'D' {
+		r += "D"
+		s = s[1:]
+	}
+
+	if s[0] == '~' {
+		r += "~"
+		s = s[1:]
+		n := strings.Index(s, "~")
+		r += s[0 : n + 1]
+		return r
+	}
+
+	return ""
+}
+
+func FlatJsonPath(s string, omitActions bool) string {
 	if s == "" {
 		return "$"
 	}
 	r := ""
+
+	if s[0] == 'A' {
+		s = s[1:]
+	} else if s[0] == 'D' {
+		s = s[1:]
+	}
 
 	if s[0] == '~' {
 		s = s[1:]
@@ -285,6 +354,9 @@ func FlatJsonPath(s string) string {
 	} else if s[0] == '^' {
 		r = "^"
 		s = s[1:]
+	}
+	if omitActions {
+		r = ""
 	}
 
 	r += "$"
@@ -707,4 +779,177 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	return nil
 }
 
+func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}, error) {
 
+	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)
+	if eDoc1 != nil {
+		return nil, nil, eDoc1
+	}
+
+	fileDoc2, eDoc2 := ioutil.ReadFile(doc2File)
+	if eDoc2 != nil {
+		return nil, nil, eDoc2
+	}
+
+	var result1 map[string]interface{}
+	var decoder1 = json.NewDecoder(bytes.NewReader(fileDoc1))
+	decoder1.UseNumber()
+
+	if err := decoder1.Decode(&result1); err != nil {
+		return nil, nil, err
+	}
+
+	var result2 map[string]interface{}
+	var decoder2 = json.NewDecoder(bytes.NewReader(fileDoc2))
+	decoder2.UseNumber()
+
+	if err := decoder2.Decode(&result2); err != nil {
+		return nil, nil, err
+	}
+
+	return result1, result2, nil
+}
+
+func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyName string, docDiffs map[string]interface{} ) error {
+
+	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
+	dstFilePath := workingDirV2 + string(os.PathSeparator) + fileName
+
+
+	jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
+
+	if err != nil {
+		return err
+	}
+
+	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
+
+	deleteActions := make(map[string]string)
+	seqDiff := make(map[string]string)
+	for key, item := range docDiffs {
+		if item == "" {
+			deleteActions[key] = ""
+		} else if strings.HasPrefix(key, "^") {
+			seqDiff[key] = item.(string)
+		} else {
+			mergeDoc.MergeByJSONPath(key, item.(string))
+		}
+	}
+
+	for key, _ := range deleteActions {
+		mergeDoc.MergeByJSONPath("", key)
+	}
+
+	for key, item := range seqDiff {
+		mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item)
+	}
+
+	data, err := json.Marshal(mergeDoc.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	WriteToFile(dstFilePath, data)
+
+	return nil
+}
+
+func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
+
+	for i := range mergeJSON.MergeActions {
+
+		if mergeJSON.MergeActions[i].FileDiff.Doc1Diffs == nil {
+			continue
+		}
+
+		if err := merge(workingDirV1, workingDirV2,
+			mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt,
+			mergeJSON.MergeActions[i].FileDiff.ObjectKeyName,
+			mergeJSON.MergeActions[i].FileDiff.Doc1Diffs); err!=nil {
+			continue
+		}
+
+	}
+	return nil
+}
+
+func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string) error {
+
+	isSrcDir := false
+	isDstDir := false
+
+	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
+
+	if errv1 != nil {
+		return errv1
+	}
+
+	isSrcDir = sketchFileV1Info.IsDir()
+
+	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
+
+	if errv2 != nil {
+		return errv2
+	}
+
+	isDstDir = sketchFileV2Info.IsDir()
+
+	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
+	if err1!=nil {
+		return err1
+	}
+	defer removeWorkingDir(workingDirV1, isSrcDir)
+
+	if isSrcDir {
+		workingDirV1 = sketchFileV1
+	}
+
+	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
+	if  err2!=nil {
+		return err2
+	}
+	defer removeWorkingDir(workingDirV2, isDstDir)
+
+	if isDstDir {
+		workingDirV2 = sketchFileV2
+	}
+
+	if !isSrcDir {
+		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
+			return err
+		}
+	}
+
+	if !isDstDir {
+		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
+			return err
+		}
+	}
+
+	mergeFile, err := ioutil.ReadFile(mergeFileName)
+	if err != nil {
+		return err
+	}
+
+	var mergeJSON FileStructureMerge
+	var decoder = json.NewDecoder(bytes.NewReader(mergeFile))
+	decoder.UseNumber()
+
+	if err := decoder.Decode(&mergeJSON); err != nil {
+		return  err
+	}
+
+	if err := mergeActions(workingDirV1, workingDirV2, mergeJSON); err != nil  {
+		return err
+	}
+
+	if !isDstDir {
+		sketchFile := outputDir + string(os.PathSeparator) + strings.TrimPrefix(sketchFileV2, filepath.Dir(sketchFileV2))
+		//similar to zip -y -r -q -8 testVCS2.sketch ./pages/ ./previews/ document.json meta.json user.json
+		Zipit(workingDirV2, sketchFile)
+	}
+
+	return nil
+
+}
