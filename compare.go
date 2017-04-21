@@ -179,7 +179,7 @@ func (jsc * JsonStructureCompare) AddDependentObjects(objKey string, docTree * i
 }
 
 
-	//Compare properties of dictionary node
+//Compare properties of dictionary node
 func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]interface{}, doc2TreeMap map[string]interface{}, pathDoc1 string, pathDoc2 string)  (string, string, bool) {
 	//defer timeTrack(time.Now(), "CompareProperties " + path)
 
@@ -234,6 +234,7 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 		}
 	}
 
+	//find all dependent properties
 	if hasDiff {
 		for key, item := range doc2TreeMap {
 			if key != jsc.ObjectKeyName {
@@ -384,6 +385,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 		}
 	}
 
+	//if it's not a layers array compare it property by property
 	if len(doc1Changes) == 0 && len(doc2Changes) == 0 {
 		if !reflect.DeepEqual(doc1TreeArray, doc2TreeArray) {
 			jsc.addDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")

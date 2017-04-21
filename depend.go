@@ -81,14 +81,15 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 	var depKey string
 	var depMap map[string]interface{}
 
-	isKeyObjectID := IsSketchID(key)
+	//isKeyObjectID := IsSketchID(key)
 	isValueObjectID := IsSketchID(value)
 
-	if isKeyObjectID {
-		depKey = key
-		depMap = dep.DepObj
-
-	} else if isValueObjectID {
+	//if isKeyObjectID {
+	//	depKey = key
+	//	depMap = dep.DepObj
+	//
+	//} else
+	if isValueObjectID {
 		depKey = value.(string)
 		depMap = dep.DepObj
 
@@ -103,13 +104,13 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 		depKey = strings.TrimPrefix(depKey, "pages/")
 	}
 
-	/*if isKeyObjectID {
-		depItem := depMap[depKey]
-		if depItem == nil {
-			depItem = make([]interface{}, 0)
-		}
-		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
-	}*/
+	//if isKeyObjectID {
+	//	depItem := depMap[depKey]
+	//	if depItem == nil {
+	//		depItem = make([]interface{}, 0)
+	//	}
+	//	depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
+	//}
 
 	if isValueObjectID {
 		depItem := depMap[depKey]
@@ -151,6 +152,8 @@ func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath
 
 }
 
+
+//Build dependencies map from jsonpath by finding ids
 func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string, jsonpath1 string, jsonpath2 string, doc map[string]interface{}) error {
 	srcSel, _, err1 := Parse(jsonpath1)
 	//fmt.Printf("jsonpath: %v\n", jsonpath1)
@@ -224,15 +227,19 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 	return nil
 }
 
-
+//build dependence map objectID->jsonpaths
 func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, workingPathV2 string, mergeActions []FileMerge) (map[string]interface{},error) {
 
 	fileMap1 := make(map[string]interface{})
-
+	//Go thru all files
 	for i := range mergeActions {
+
+		//build files associates for addDependencies method
 		fileMap1[mergeActions[i].FileKey] = mergeActions[i]
+		//only if it's json file
 		if filepath.Ext(strings.ToLower(mergeActions[i].FileKey + mergeActions[i].FileExt)) == ".json" {
 			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
+			//if its a new file
 			if mergeActions[i].Action == ADD {
 				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
 					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
@@ -242,6 +249,7 @@ func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, working
 					jsonFilePath := "A~" + fullFilePath + "~$"
 					dep.AddDependent( mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
 				}
+			// if we need to delete this file
 			} else if mergeActions[i].Action == DELETE {
 				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
 					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")

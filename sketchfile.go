@@ -358,26 +358,51 @@ func WriteToFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0755 )
 }
 
+//Find dependent jsonpaths to matchingKey recursively
+//depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
+//matchingKey is merge jsonpath
 func findMatchingDiffs(fileName string, matchingKey string, depPaths map[string]interface{}, diffs map[string]interface{}) {
+
 
 	for key, item := range depPaths {
 
+		//remove all file actions from key jsonpath
 		flatKey := FlatJsonPath(key, true)
+
+		//remove file action specific elements from jsonpath
 		flatMatch := FlatJsonPath(matchingKey, true)
+
+		//find only dependent paths matching given matchingKey or having it as prefix
 		if flatKey == flatMatch || strings.HasPrefix(flatKey, flatMatch) {
 
+			//ignore sequence change dependencies
 			if strings.HasPrefix(matchingKey, "^") {
 				continue
 			}
 
 			paths, isPaths := item.([]interface{})
 			if isPaths {
+				//go thru all paths for given matchingKey jsonpath may look as follows
+				//	"~meta.json~$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]": [
+				//	{
+				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"8291C1C6-561D-4A25-B542-79E8FE345D57\"]",
+				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
+				//	},
+				//	{
+				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"5BE4BA40-5F69-4462-B0A6-DEA22B389233\"]",
+				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
+				//	},
+				//	{
+				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"D00F61B0-476C-4F11-9C07-57DEA1C24D0C\"]",
+				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
+				//	}
+				//	]
 				for i := range paths {
 					newKey := paths[i].(DependentObj).JsonPath
 					fileKey := ReadFileAction(key)
 					fileNewKey := ReadFileAction(newKey)
 
-					log.Printf("fileName: %v -> %v\n", fileName, ReadFileKey(newKey) )
+					//log.Printf("fileName: %v -> %v\n", fileName, ReadFileKey(newKey) )
 
 					//if it reffers to actual file just ignore
 					if fileName == ReadFileKey(newKey) {
@@ -431,6 +456,7 @@ func addDependencies(fileKey string, depObj * DependentObjects, docDep * Depende
 
 					docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, depPaths[j].(DependentObj).Ref, depPaths[j].(DependentObj).JsonPath)
 
+					//get file details from associated map build by buildDependencePaths in order to get particular dependent objects for file
 					fileMerge, isFileMerge := fileMap[depPaths[j].(DependentObj).FileKey].(FileMerge)
 
 					if isFileMerge && fileMerge.FileDiff.DepDoc1 != nil {
@@ -449,7 +475,10 @@ func addDependencies(fileKey string, depObj * DependentObjects, docDep * Depende
 								if isPath {
 									for i := range subDepPath {
 										var newFileKey = "~" + fileMerge.FileKey + fileMerge.FileExt + "~" + subKey
-										if strings.HasPrefix(subKey, "~") {
+										//keep prefix if jsonpath contain fileName
+										if strings.HasPrefix(subKey, "~") ||
+											strings.HasPrefix(subKey, "A") ||
+											strings.HasPrefix(subKey, "D") {
 											newFileKey = subKey
 										}
 										docDep.AddDependentPath(newFileKey, subDepPath[i].(DependentObj).Ref, subDepPath[i].(DependentObj).JsonPath)
@@ -479,6 +508,7 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 
 	depObj := DependentObjects{make(map[string]interface{}), make(map[string]interface{})}
 
+	//find all dependent jsonpaths by do_objectID or symbolID or any sketchID
 	fileMap, err := depObj.buildDependencePaths(workingDirV1, workingDirV2, fileMerge)
 	if err!=nil {
 		return err
@@ -487,7 +517,7 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 	info, _ := json.MarshalIndent(depObj, "", "  ")
 	fmt.Printf("%v\n", string(info))
 
-	_=fileMap
+	//build dependent jsonpaths for each file
 	for i := range fileMerge {
 		fileMerge[i].FileDiff.DepDoc1 = addDependencies(fileMerge[i].FileKey, &depObj, fileMerge[i].FileDiff.DepDoc1, fileMap, make(map[string]bool))
 	}
