@@ -79,9 +79,6 @@ func (sd* MainDiff) SetDiff(action ApplyAction, src string, dst string, niceDesc
 		sd.Description["nice_description"] = make([]string, 0)
 	}
 
-	sd.Description["action"] = append(sd.Description["action"].([]string), action)
-	sd.Description["nice_description_short"] = append(sd.Description["nice_description_short"].([]string), niceDescShortText)
-	sd.Description["nice_description"] = append(sd.Description["nice_description"].([]string), niceDescText)*/
 
 	strAction := ""
 
@@ -95,7 +92,12 @@ func (sd* MainDiff) SetDiff(action ApplyAction, src string, dst string, niceDesc
 	case SequenceChange:
 		strAction = "SequenceChange"
 	}
-	_=strAction
+
+	sd.Description["action"] = append(sd.Description["action"].([]string), strAction)
+	sd.Description["nice_description_short"] = append(sd.Description["nice_description_short"].([]string), niceDescShortText)
+	sd.Description["nice_description"] = append(sd.Description["nice_description"].([]string), niceDescText)
+	*/
+
 	sd.Diff[src] = dst
 
 
@@ -234,7 +236,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 }
 
 //Builds nice json for pages only
-func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths map[string]interface{} ) map[string]interface{}  {
+func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}) map[string]interface{}  {
 
 	if diff==nil {
 		return nil
@@ -338,7 +340,7 @@ func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[stri
 
 		diff.SetDifference(srcact, skDiff, key, item.(string))
 
-		findMatchingDiffs(fileName, key, depPaths, mathingDiffs)
+		findMatchingDiffs(SOURCE, fileName, key, depPaths1, depPaths2, mathingDiffs)
 
 		for mKey, mItem := range mathingDiffs {
 			diff.SetDifference(srcact, skDiff, mKey, mItem.(string))
@@ -361,10 +363,18 @@ func WriteToFile(path string, data []byte) error {
 //Find dependent jsonpaths to matchingKey recursively
 //depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
 //matchingKey is merge jsonpath
-func findMatchingDiffs(fileName string, matchingKey string, depPaths map[string]interface{}, diffs map[string]interface{}) {
+func findMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
 
 
-	for key, item := range depPaths {
+	//if it's delete action that will affect destination file so changing processing file
+	if strings.HasPrefix(matchingKey, "-") && docType == SOURCE {
+		//matchingAction := "+" + FlatJsonPath(matchingKey, true)
+
+		findMatchingDiffs(DESTINATION, fileName, matchingKey, depPaths2, depPaths1, diffs)
+		return
+	}
+
+	for key, item := range depPaths1 {
 
 		//remove all file actions from key jsonpath
 		flatKey := FlatJsonPath(key, true)
@@ -374,6 +384,7 @@ func findMatchingDiffs(fileName string, matchingKey string, depPaths map[string]
 
 		//find only dependent paths matching given matchingKey or having it as prefix
 		if flatKey == flatMatch || strings.HasPrefix(flatKey, flatMatch) {
+
 
 			//ignore sequence change dependencies
 			if strings.HasPrefix(matchingKey, "^") {
@@ -415,15 +426,24 @@ func findMatchingDiffs(fileName string, matchingKey string, depPaths map[string]
 					}
 
 					//if there is similar element just ignore it
-					if diffs[newKey] != nil {
+					if diffs[newKey] != nil || diffs["R" + newKey] != nil {
 						continue
 					}
 
+					dstActionPrefix := ""
+
+					//Mark all destination actions to source as reverse, should invert all actions
+					// + to - and invert changes
+					//this is required in order to delete dependend objects if referencing object has bean deleted
+					if docType == DESTINATION {
+						dstActionPrefix = "R"
+					}
+
 					//store new jsonpath pair
-					diffs[newKey] = paths[i].(DependentObj).Ref //+ " <- " + key
+					diffs[dstActionPrefix + newKey] = dstActionPrefix + paths[i].(DependentObj).Ref + " ← " + key
 
 					//Look up dependencies recursively for newKey
-					findMatchingDiffs(fileName, newKey, depPaths, diffs)
+					findMatchingDiffs(docType, fileName, newKey, depPaths1, depPaths2, diffs)
 				}
 			}
 		}
@@ -432,11 +452,15 @@ func findMatchingDiffs(fileName string, matchingKey string, depPaths map[string]
 }
 
 //Convert dependent objects to depencies jsonpaths
-func addDependencies(fileKey string, depObj * DependentObjects, docDep * DependentObjects, fileMap map[string]interface{}, stopFileKey map[string]bool) (*DependentObjects) {
+func addDependencies(docType DocumentType, fileKey string, depObj * DependentObjects, docDep * DependentObjects, fileMap map[string]interface{}, stopFileKey map[string]bool) (*DependentObjects) {
 	if docDep == nil {
-		docDep = &DependentObjects{make(map[string]interface{}),make(map[string]interface{})}
+		docDep = &DependentObjects{ docType, make(map[string]interface{}),make(map[string]interface{})}
 	}
 	for key, value := range docDep.DepObj {
+
+		if key == "15B5F1C7-FC17-4E2D-AF72-9C1F129B4261" {
+			fmt.Printf("")
+		}
 
 		iPaths := depObj.DepObj[key]
 
@@ -459,15 +483,21 @@ func addDependencies(fileKey string, depObj * DependentObjects, docDep * Depende
 					//get file details from associated map build by buildDependencePaths in order to get particular dependent objects for file
 					fileMerge, isFileMerge := fileMap[depPaths[j].(DependentObj).FileKey].(FileMerge)
 
-					if isFileMerge && fileMerge.FileDiff.DepDoc1 != nil {
+					docDiffs := fileMerge.FileDiff.DepDoc1
+
+					if docType == DESTINATION {
+						docDiffs = fileMerge.FileDiff.DepDoc2
+					}
+
+					if isFileMerge && docDiffs != nil {
 
 						//Avoid endless recursions by keeping all files keys in map
 						if !stopFileKey[fileMerge.FileKey] {
 
 							//Find dependencies recursively
-							docSubDep := &DependentObjects{fileMerge.FileDiff.DepDoc1.DepObj, make(map[string]interface{})}
+							docSubDep := &DependentObjects{ docType, docDiffs.DepObj, make(map[string]interface{})}
 							stopFileKey[fileKey] = true
-							subDep := addDependencies(depPaths[j].(DependentObj).FileKey, depObj, docSubDep, fileMap, stopFileKey)
+							subDep := addDependencies(docType, depPaths[j].(DependentObj).FileKey, depObj, docSubDep, fileMap, stopFileKey)
 
 							//Add jsonpaths to current dependency
 							for subKey, subPath := range subDep.DepPath {
@@ -506,20 +536,34 @@ func addDependencies(fileKey string, depObj * DependentObjects, docDep * Depende
 
 func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) error {
 
-	depObj := DependentObjects{make(map[string]interface{}), make(map[string]interface{})}
+	depObj1 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
+	depObj2 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
 
 	//find all dependent jsonpaths by do_objectID or symbolID or any sketchID
-	fileMap, err := depObj.buildDependencePaths(workingDirV1, workingDirV2, fileMerge)
-	if err!=nil {
-		return err
+	fileMap1, err1 := depObj1.buildDependencePaths(SOURCE, workingDirV1, workingDirV2, fileMerge, &depObj2)
+
+	if err1!=nil {
+		return err1
 	}
 
-	info, _ := json.MarshalIndent(depObj, "", "  ")
-	fmt.Printf("%v\n", string(info))
+	fileMap2, err2 := depObj2.buildDependencePaths(DESTINATION, workingDirV2, workingDirV1, fileMerge, &depObj1)
+	if err2!=nil {
+		return err2
+	}
+
+	info1, _ := json.MarshalIndent(depObj1, "", "  ")
+	fmt.Printf("%v\n", string(info1))
+
+	info2, _ := json.MarshalIndent(depObj2, "", "  ")
+	fmt.Printf("%v\n", string(info2))
 
 	//build dependent jsonpaths for each file
 	for i := range fileMerge {
-		fileMerge[i].FileDiff.DepDoc1 = addDependencies(fileMerge[i].FileKey, &depObj, fileMerge[i].FileDiff.DepDoc1, fileMap, make(map[string]bool))
+		if fileMerge[i].FileKey == "document" {
+			fmt.Printf("")
+		}
+		fileMerge[i].FileDiff.DepDoc1 = addDependencies(SOURCE, fileMerge[i].FileKey, &depObj1, fileMerge[i].FileDiff.DepDoc1, fileMap1, make(map[string]bool))
+		fileMerge[i].FileDiff.DepDoc2 = addDependencies(DESTINATION, fileMerge[i].FileKey, &depObj2, fileMerge[i].FileDiff.DepDoc2, fileMap2, make(map[string]bool))
 	}
 	return nil;
 }
@@ -594,6 +638,10 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 
 		}
 	}
+	//{
+	//	mergeInfo, _ := json.MarshalIndent(fsMerge, "", "  ")
+	//	fmt.Printf("%v\n", string(mergeInfo))
+	//}
 
 	if err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
 		return nil, err
@@ -646,8 +694,8 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 				jsCompare := fsMerge.MergeActions[i].FileDiff
 
 				fileName := fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt
-				fsMerge.MergeActions[i].FileDiff.Doc1Diffs = ProduceNiceDiff(fileName, result1, result2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath)
-				fsMerge.MergeActions[i].FileDiff.Doc2Diffs = ProduceNiceDiff(fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath)
+				fsMerge.MergeActions[i].FileDiff.Doc1Diffs = ProduceNiceDiff(fileName, result1, result2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath)
+				fsMerge.MergeActions[i].FileDiff.Doc2Diffs = ProduceNiceDiff(fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath)
 			}
 		}
 

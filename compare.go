@@ -174,6 +174,7 @@ func (jsc * JsonStructureCompare) traverseDependentObjects(objKey string, docTre
 
 func (jsc * JsonStructureCompare) AddDependentObjects(objKey string, docTree * interface{}, dep * DependentObjects, jsonpath string) {
 	if !!jsc.traverseDependentObjects(objKey, docTree, dep, jsonpath) {
+
 		dep.AddDependentObject(objKey, *docTree, jsonpath )
 	}
 }
@@ -391,18 +392,24 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			jsc.addDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
 			jsc.addDoc2Diff(pathDoc2, pathDoc1, "CompareSlices")
 
+
 			for idxDoc1 := range doc1TreeArray {
 				jsonpathDoc1 := strings.Join([]string{pathDoc1, "[", strconv.Itoa(idxDoc1), "]"}, "")
 				jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc1), "]"}, "")
 				if idxDoc1 >= len(doc2TreeArray) {
-					jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
-					jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
+					jsc.addDoc2Diff("B-" + jsonpathDoc1, "","CompareSlices")
+					jsc.addDoc1Diff("B+" + jsonpathDoc1, "B" + pathDoc2, "CompareSlices")
+					jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
 					continue
 				}
 
+				jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
+				jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc1]), jsc.DepDoc2, jsonpathDoc2)
+
 				if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc1]), jsonpathDoc1, jsonpathDoc2); !ok {
-					jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
-					jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
+					jsc.addDoc1Diff("B" + __jsonpath1, "B" + __jsonpath2, "CompareSlices")
+					jsc.addDoc2Diff("B" + __jsonpath2, "B" + __jsonpath1, "CompareSlices")
+
 				}
 			}
 
@@ -413,9 +420,9 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 				for idxDoc2 := idxStart; idxDoc2 < idxEnd; idxDoc2++ {
 					jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
 					if idxDoc2 >= len(doc1TreeArray) {
-						jsc.addDoc1Diff("-"+jsonpathDoc2, "", "CompareSlices")
-						jsc.addDoc2Diff("+"+jsonpathDoc2, pathDoc1, "CompareSlices")
-
+						jsc.addDoc1Diff("B-"+jsonpathDoc2, "", "CompareSlices")
+						jsc.addDoc2Diff("B+"+jsonpathDoc2, "B" + pathDoc1, "CompareSlices")
+						jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
 
 						continue
 					}
@@ -475,8 +482,8 @@ func NewJsonStructureCompare() *JsonStructureCompare {
 						make(map[string]interface{}),
 						make(map[string]interface{}),
 						"do_objectID",
-							&DependentObjects{make(map[string]interface{}), make(map[string]interface{})},
-							&DependentObjects{make(map[string]interface{}), make(map[string]interface{})}}
+							&DependentObjects{ SOURCE,make(map[string]interface{}), make(map[string]interface{})},
+							&DependentObjects{ DESTINATION, make(map[string]interface{}), make(map[string]interface{})}}
 }
 
 func Test(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}) {

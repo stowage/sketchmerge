@@ -7,7 +7,7 @@ import (
 	"time"
 	"path/filepath"
 	"os"
-	_"fmt"
+	"fmt"
 )
 const GuidFormat = "^[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
 
@@ -27,6 +27,13 @@ func BuildReg(regstr string) (*regexp.Regexp) {
 	return reg
 }
 
+const  (
+	SOURCE = iota
+	DESTINATION
+)
+
+type DocumentType uint8
+
 type DependentObj struct {
 	JsonPath string `json:"path,omitempty"`
 	Ref string `json:"ref,omitempty"`
@@ -40,6 +47,7 @@ type DependentMerge struct {
 }
 
 type DependentObjects struct {
+	docType DocumentType
 	DepObj map[string]interface{} `json:"dep_obj,omitempty"`
 	DepPath map[string]interface{} `json:"dep_path,omitempty"`
 }
@@ -81,6 +89,9 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 	var depKey string
 	var depMap map[string]interface{}
 
+	if key == "_ref" {
+		fmt.Printf("")
+	}
 	//isKeyObjectID := IsSketchID(key)
 	isValueObjectID := IsSketchID(value)
 
@@ -227,8 +238,10 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 	return nil
 }
 
+
+
 //build dependence map objectID->jsonpaths
-func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, workingPathV2 string, mergeActions []FileMerge) (map[string]interface{},error) {
+func (dep * DependentObjects) buildDependencePaths(docType DocumentType, workingPathV1 string, workingPathV2 string, mergeActions []FileMerge, dep2 * DependentObjects) (map[string]interface{},error) {
 
 	fileMap1 := make(map[string]interface{})
 	//Go thru all files
@@ -239,29 +252,45 @@ func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, working
 		//only if it's json file
 		if filepath.Ext(strings.ToLower(mergeActions[i].FileKey + mergeActions[i].FileExt)) == ".json" {
 			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
+			mergeActionCode := mergeActions[i].Action
+			fileActionPrefix := ""
+
+			if docType == DESTINATION {
+				if mergeActionCode == ADD {
+					mergeActionCode = DELETE
+				} else if mergeActionCode == DELETE {
+					mergeActionCode = ADD
+				}
+			}
+
+			switch mergeActionCode {
+			case ADD:
+				fileActionPrefix = "A"
+			case DELETE:
+				fileActionPrefix = "D"
+			}
+
 			//if its a new file
-			if mergeActions[i].Action == ADD {
+			if mergeActionCode != MERGE {
 				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
 					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
 					jsonFilePath := "~" + fullFilePath + "~$"
-					dep.AddDependent(objectID, "A" + jsonFilePath, "A" + jsonFilePath, mergeActions[i].FileKey)
+					dep.AddDependent(objectID, fileActionPrefix+jsonFilePath, fileActionPrefix+jsonFilePath, mergeActions[i].FileKey)
+
 				} else {
-					jsonFilePath := "A~" + fullFilePath + "~$"
-					dep.AddDependent( mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
-				}
-			// if we need to delete this file
-			} else if mergeActions[i].Action == DELETE {
-				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
-					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
-					jsonFilePath := "D~" + fullFilePath + "~$"
-					dep.AddDependent(objectID, jsonFilePath, jsonFilePath,mergeActions[i].FileKey)
-				} else {
-					jsonFilePath := "D~" + fullFilePath + "~$"
+					jsonFilePath := fileActionPrefix + "~" + fullFilePath + "~$"
 					dep.AddDependent(mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
 				}
+			// if we need to delete this file
 			} else {
 
-				if mergeActions[i].FileDiff.Doc1Diffs == nil {
+				docDiffs := mergeActions[i].FileDiff.Doc1Diffs
+
+				if docType == DESTINATION {
+					docDiffs = mergeActions[i].FileDiff.Doc2Diffs
+				}
+
+				if docDiffs == nil {
 					continue
 				}
 
@@ -269,18 +298,66 @@ func (dep * DependentObjects) buildDependencePaths(workingPathV1 string, working
 					continue
 				}
 
-				result, err := readJSON(workingPathV1 + string(os.PathSeparator) + fullFilePath)
+				result1, err1 := readJSON(workingPathV1 + string(os.PathSeparator) + fullFilePath)
 
-				if err != nil {
-					return nil, err
+				if err1 != nil {
+					return nil, err1
 				}
 
-				for key, item := range mergeActions[i].FileDiff.Doc1Diffs {
-					if err := dep.ResolveDependencies(mergeActions[i].FileKey, fullFilePath, key, item.(string), result); err!=nil {
-						return nil, err
+				if _, err := os.Stat(workingPathV2 + string(os.PathSeparator) + fullFilePath); os.IsNotExist(err) {
+					continue
+				}
+
+				result2, err2 := readJSON(workingPathV2 + string(os.PathSeparator) + fullFilePath)
+
+				if err2 != nil {
+					return nil, err2
+				}
+
+				for key, item := range docDiffs {
+					if strings.HasPrefix(key, "-") {
+						if err := dep2.ResolveDependencies(mergeActions[i].FileKey, fullFilePath, key, item.(string), result2); err != nil {
+							return nil, err
+						}
+					} else {
+						if err := dep.ResolveDependencies(mergeActions[i].FileKey, fullFilePath, key, item.(string), result1); err != nil {
+							return nil, err
+						}
 					}
 				}
 			}
+		} else {
+			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
+			mergeActionCode := mergeActions[i].Action
+			fileActionPrefix := ""
+
+			if docType == DESTINATION {
+				if mergeActionCode == ADD {
+					mergeActionCode = DELETE
+				} else if mergeActionCode == DELETE {
+					mergeActionCode = ADD
+				}
+			}
+
+			switch mergeActionCode {
+			case ADD, MERGE:
+				fileActionPrefix = "A"
+			case DELETE:
+				fileActionPrefix = "D"
+			}
+
+			//if its a binary
+			if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
+				objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
+				jsonFilePath := "~" + fullFilePath + "~$"
+				dep.AddDependent(objectID, fileActionPrefix+jsonFilePath, fileActionPrefix+jsonFilePath, mergeActions[i].FileKey)
+
+			} else {
+				jsonFilePath := fileActionPrefix + "~" + fullFilePath + "~$"
+				dep.AddDependent(mergeActions[i].FileKey, jsonFilePath, jsonFilePath, mergeActions[i].FileKey)
+			}
+
+
 		}
 	}
 
