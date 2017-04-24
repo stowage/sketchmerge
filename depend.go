@@ -7,6 +7,7 @@ import (
 	"time"
 	"path/filepath"
 	"os"
+	"encoding/json"
 	"fmt"
 )
 const GuidFormat = "^[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
@@ -89,12 +90,11 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 	var depKey string
 	var depMap map[string]interface{}
 
-	if key == "_ref" {
-		fmt.Printf("")
-	}
+	//In case we need to take GUID values in key elements uncomment this
 	//isKeyObjectID := IsSketchID(key)
 	isValueObjectID := IsSketchID(value)
 
+	//In case we need to take GUID values in key elements uncomment this
 	//if isKeyObjectID {
 	//	depKey = key
 	//	depMap = dep.DepObj
@@ -115,6 +115,7 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 		depKey = strings.TrimPrefix(depKey, "pages/")
 	}
 
+	//In case we need to take GUID values in key elements uncomment this
 	//if isKeyObjectID {
 	//	depItem := depMap[depKey]
 	//	if depItem == nil {
@@ -166,6 +167,7 @@ func (dep* DependentObjects) AddDependentPath(key string, value string, jsonpath
 
 //Build dependencies map from jsonpath by finding ids
 func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string, jsonpath1 string, jsonpath2 string, doc map[string]interface{}) error {
+	//defer TimeTrack(time.Now(), "ResolveDependencies" + jsonpath1)
 	srcSel, _, err1 := Parse(jsonpath1)
 	//fmt.Printf("jsonpath: %v\n", jsonpath1)
 	if err1 != nil {
@@ -176,6 +178,7 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 	if jsonpath2 == "" {
 		return nil
 	}
+
 	fileJsonPath1 := ""
 
 	if filepath != "" {
@@ -197,6 +200,7 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 	_, _, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
 		layer, isLayer := v.(map[string]interface{})
 		if isLayer {
+
 			if layer["_class"] == "symbolMaster" {
 				sid := layer["symbolID"]
 				if sid != nil {
@@ -243,6 +247,8 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 //build dependence map objectID->jsonpaths
 func (dep * DependentObjects) buildDependencePaths(docType DocumentType, workingPathV1 string, workingPathV2 string, mergeActions []FileMerge, dep2 * DependentObjects) (map[string]interface{},error) {
 
+	defer TimeTrack(time.Now(), "buildDependencePaths " + workingPathV1)
+
 	fileMap1 := make(map[string]interface{})
 	//Go thru all files
 	for i := range mergeActions {
@@ -251,10 +257,13 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 		fileMap1[mergeActions[i].FileKey] = mergeActions[i]
 		//only if it's json file
 		if filepath.Ext(strings.ToLower(mergeActions[i].FileKey + mergeActions[i].FileExt)) == ".json" {
+
 			fullFilePath :=  mergeActions[i].FileKey + mergeActions[i].FileExt
+
 			mergeActionCode := mergeActions[i].Action
 			fileActionPrefix := ""
 
+			//defer TimeTrack(time.Now(), "buildDependencePaths for each " + fullFilePath)
 			if docType == DESTINATION {
 				if mergeActionCode == ADD {
 					mergeActionCode = DELETE
@@ -283,6 +292,8 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 				}
 			// if we need to delete this file
 			} else {
+
+				//defer TimeTrack(time.Now(), "reading buildDependencePaths for each " + fullFilePath)
 
 				docDiffs := mergeActions[i].FileDiff.Doc1Diffs
 
@@ -315,6 +326,7 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 				}
 
 				for key, item := range docDiffs {
+
 					if strings.HasPrefix(key, "-") {
 						if err := dep2.ResolveDependencies(mergeActions[i].FileKey, fullFilePath, key, item.(string), result2); err != nil {
 							return nil, err
@@ -364,3 +376,112 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 	return fileMap1, nil
 }
 
+//Convert dependent objects to depencies jsonpaths
+func addDependencies(docType DocumentType, fileKey string, depObj * DependentObjects, docDep * DependentObjects, fileMap map[string]interface{}, stopFileKey map[string]bool) (*DependentObjects) {
+	if docDep == nil {
+		docDep = &DependentObjects{ docType, make(map[string]interface{}),make(map[string]interface{})}
+	}
+	for key, value := range docDep.DepObj {
+
+		iPaths := depObj.DepObj[key]
+
+		if iPaths == nil {
+			continue
+		}
+		depPaths := iPaths.([]interface{})
+		paths := value.([]interface{})
+		//Loop thru all dependencies build by buildDependencePaths method
+		for k := range paths {
+
+			//Go thru all dependencies in actual file
+			for j := range depPaths {
+
+				//Add dependencies if it reffers to other file
+				if depPaths[j].(DependentObj).FileKey != fileKey {
+
+					docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, depPaths[j].(DependentObj).Ref, depPaths[j].(DependentObj).JsonPath)
+
+					//get file details from associated map build by buildDependencePaths in order to get particular dependent objects for file
+					fileMerge, isFileMerge := fileMap[depPaths[j].(DependentObj).FileKey].(FileMerge)
+
+					docDiffs := fileMerge.FileDiff.DepDoc1
+
+					if docType == DESTINATION {
+						docDiffs = fileMerge.FileDiff.DepDoc2
+					}
+
+					if isFileMerge && docDiffs != nil {
+
+						//Avoid endless recursions by keeping all files keys in map
+						if !stopFileKey[fileMerge.FileKey] {
+
+							//Find dependencies recursively
+							docSubDep := &DependentObjects{ docType, docDiffs.DepObj, make(map[string]interface{})}
+							stopFileKey[fileKey] = true
+							subDep := addDependencies(docType, depPaths[j].(DependentObj).FileKey, depObj, docSubDep, fileMap, stopFileKey)
+
+							//Add jsonpaths to current dependency
+							for subKey, subPath := range subDep.DepPath {
+								subDepPath, isPath := subPath.([]interface{})
+								if isPath {
+									for i := range subDepPath {
+										var newFileKey = "~" + fileMerge.FileKey + fileMerge.FileExt + "~" + subKey
+										//keep prefix if jsonpath contain fileName
+										if strings.HasPrefix(subKey, "~") ||
+											strings.HasPrefix(subKey, "A") ||
+											strings.HasPrefix(subKey, "D") {
+											newFileKey = subKey
+										}
+										docDep.AddDependentPath(newFileKey, subDepPath[i].(DependentObj).Ref, subDepPath[i].(DependentObj).JsonPath)
+									}
+								}
+							}
+						}
+
+					}
+
+				} else {
+					//Add dependencies if it reffers to actual file
+					ref := FlatJsonPath(depPaths[j].(DependentObj).Ref, false)
+					jsonpath := FlatJsonPath(depPaths[j].(DependentObj).JsonPath, false)
+					if jsonpath != "" {
+						docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, ref, jsonpath)
+					}
+				}
+			}
+
+		}
+	}
+	return docDep
+}
+
+func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) error {
+
+	depObj1 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
+	depObj2 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
+
+	//find all dependent jsonpaths by do_objectID or symbolID or any sketchID
+	fileMap1, err1 := depObj1.buildDependencePaths(SOURCE, workingDirV1, workingDirV2, fileMerge, &depObj2)
+
+	if err1!=nil {
+		return err1
+	}
+
+	fileMap2, err2 := depObj2.buildDependencePaths(DESTINATION, workingDirV2, workingDirV1, fileMerge, &depObj1)
+	if err2!=nil {
+		return err2
+	}
+
+	info1, _ := json.MarshalIndent(depObj1, "", "  ")
+	fmt.Printf("%v\n", string(info1))
+
+	info2, _ := json.MarshalIndent(depObj2, "", "  ")
+	fmt.Printf("%v\n", string(info2))
+
+	//build dependent jsonpaths for each file
+	for i := range fileMerge {
+		fileMerge[i].FileDiff.DepDoc1 = addDependencies(SOURCE, fileMerge[i].FileKey, &depObj1, fileMerge[i].FileDiff.DepDoc1, fileMap1, make(map[string]bool))
+		fileMerge[i].FileDiff.DepDoc2 = addDependencies(DESTINATION, fileMerge[i].FileKey, &depObj2, fileMerge[i].FileDiff.DepDoc2, fileMap2, make(map[string]bool))
+	}
+	return nil;
+}

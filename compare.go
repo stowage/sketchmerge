@@ -15,7 +15,7 @@ import (
 	"io/ioutil"
 	"bytes"
 	"time"
-	"log"
+	_"log"
 	_ "sync"
 	"reflect"
 )
@@ -144,10 +144,6 @@ func (fs*FileStructureMerge) FileSetChange(baseSet SketchFileStruct, newSet Sket
 	}
 }
 
-func timeTrack(start time.Time, name string) {
-	elapsed := time.Since(start)
-	log.Printf("%s took %s", name, elapsed)
-}
 
 func (jsc * JsonStructureCompare) traverseDependentObjects(objKey string, docTree * interface{}, dep * DependentObjects, jsonpath string) bool  {
 
@@ -208,6 +204,7 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 				hasDiff = true
 			}
 		} else {
+
 			jsc.addDoc2Diff("-" + pathDoc1 + `["` + key + `"]`,"", "CompareProperties")
 			jsc.addDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
 			hasDiff = true
@@ -358,6 +355,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			delete(doc1ChangesCopy, idxDoc1)
 		}
 		if idxDoc2 == -1 {
+
 			//if there is no such element in doc2 array
 			jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
 			jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
@@ -378,10 +376,11 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
 
 		if idxDoc1 == -1 {
+
 			//if there is no such element in doc1 array
 			jsc.addDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
 			jsc.addDoc2Diff("+" + jsonpathDoc2, pathDoc1, "CompareSlices")
-			jsc.DepDoc1.AddDependentPath( "-" + jsonpathDoc2, "^" + pathDoc2, "^" + pathDoc1)
+			jsc.DepDoc1.AddDependentPath("-" + jsonpathDoc2, "^" + pathDoc2, "^" + pathDoc1)
 			jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
 		}
 	}
@@ -392,13 +391,13 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			jsc.addDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
 			jsc.addDoc2Diff(pathDoc2, pathDoc1, "CompareSlices")
 
-
 			for idxDoc1 := range doc1TreeArray {
 				jsonpathDoc1 := strings.Join([]string{pathDoc1, "[", strconv.Itoa(idxDoc1), "]"}, "")
 				jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc1), "]"}, "")
+
 				if idxDoc1 >= len(doc2TreeArray) {
-					jsc.addDoc2Diff("B-" + jsonpathDoc1, "","CompareSlices")
-					jsc.addDoc1Diff("B+" + jsonpathDoc1, "B" + pathDoc2, "CompareSlices")
+					jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
+					jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
 					jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
 					continue
 				}
@@ -407,9 +406,8 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 				jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc1]), jsc.DepDoc2, jsonpathDoc2)
 
 				if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc1]), jsonpathDoc1, jsonpathDoc2); !ok {
-					jsc.addDoc1Diff("B" + __jsonpath1, "B" + __jsonpath2, "CompareSlices")
-					jsc.addDoc2Diff("B" + __jsonpath2, "B" + __jsonpath1, "CompareSlices")
-
+					jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
+					jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
 				}
 			}
 
@@ -420,11 +418,9 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 				for idxDoc2 := idxStart; idxDoc2 < idxEnd; idxDoc2++ {
 					jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
 					if idxDoc2 >= len(doc1TreeArray) {
-						jsc.addDoc1Diff("B-"+jsonpathDoc2, "", "CompareSlices")
-						jsc.addDoc2Diff("B+"+jsonpathDoc2, "B" + pathDoc1, "CompareSlices")
+						jsc.addDoc1Diff("-"+jsonpathDoc2, "", "CompareSlices")
+						jsc.addDoc2Diff("+"+jsonpathDoc2, pathDoc1, "CompareSlices")
 						jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
-
-						continue
 					}
 				}
 			}
@@ -472,7 +468,7 @@ func (jsc * JsonStructureCompare) CompareDocuments(doc1 *interface{}, doc2 *inte
 }
 
 func (jsc * JsonStructureCompare) Compare(doc1TreeMap map[string]interface{}, doc2TreeMap map[string]interface{}, path string) {
-	defer timeTrack(time.Now(), "Compare" + path)
+	defer TimeTrack(time.Now(), "Compare" + path)
 	jsc.CompareProperties(doc1TreeMap, doc2TreeMap, path, path)
 }
 

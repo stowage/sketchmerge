@@ -230,3 +230,37 @@ func TestMergeDocuments_MergeByJSONPath1(t *testing.T) {
 	fmt.Println(string(mergeInfo2))
 
 }
+
+func TestGetSortedDiffs(t *testing.T) {
+	diffs := make(map[string]interface{})
+
+	diffs[`$["layers"][2]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][3]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][4]["frame"][10]`] = ""
+	diffs[`$["layers"][5]["frame"]["x"]`] = ""
+	diffs[`$["layers"][6]["frame"]`] = ""
+	diffs[`$["layers"][7]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][8]`] = ""
+	diffs[`$["layers"][9]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][10]["frame"]`] = ""
+	diffs[`$["layers"]`] = ""
+	diffs[`$["layers"][12]["frame"]["constrainProportions"][12]`] = ""
+
+	mergeInfo2, _ := json.MarshalIndent(diffs, "", "  ")
+	fmt.Println(string(mergeInfo2))
+
+	sorted := GetSortedDiffs(diffs, "test")
+
+	mergeInfo, _ := json.MarshalIndent(sorted, "", "  ")
+	fmt.Println(string(mergeInfo))
+
+	l := -1
+	for i := range sorted  {
+		ll := PathLength(sorted[i].(DependentObj).JsonPath)
+		if ll < l {
+			t.Errorf("Sorting issue: %d > %d", ll, l)
+		}
+		l = ll
+	}
+
+}

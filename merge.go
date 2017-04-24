@@ -23,6 +23,7 @@ type Selection interface {
 	Apply(v interface{}) (interface{}, Node, error)
 	ApplyWithEvent(v interface{}, e NodeEvent) (interface{}, Node, error)
 	GetKey() (interface{})
+	GetCurrentPath() string
 }
 
 type Node interface {
@@ -35,6 +36,7 @@ type Node interface {
 	GetLast() Node
 	GetFileName() string
  	GetFileAction() (FileActionType)
+
 
 }
 
@@ -69,13 +71,6 @@ func applyNext(nn Node, prevnn Node, v interface{}, e NodeEvent) (interface{}, N
 	return nn.ApplyWithEvent(v, e)
 }
 
-func insert(slice []interface{}, index int , value interface{}) ([]interface{}) {
-
-	slice = slice[0 : len(slice)+1]
-	copy(slice[index+1:], slice[index:])
-	slice[index] = value
-	return slice
-}
 
 type RootNode struct {
 	NextNode Node
@@ -134,6 +129,11 @@ func (r *RootNode) GetKey() interface{} {
 	return nil
 }
 
+func (r *RootNode) GetCurrentPath() string {
+
+	return "$"
+}
+
 type MapSelection struct {
 	Key string
 	RootNode
@@ -163,6 +163,10 @@ func (m *MapSelection) GetKey() interface{} {
 	return m.Key
 }
 
+func (m *MapSelection) GetCurrentPath() string {
+
+	return "[\"" + m.Key + "\"]"
+}
 
 type ArraySelection struct {
 	Key int
@@ -194,6 +198,11 @@ func (a *ArraySelection) GetKey() interface{} {
 	return a.Key
 }
 
+func (a *ArraySelection) GetCurrentPath() string {
+
+	return "[" + strconv.Itoa(a.Key) + "]"
+}
+
 func minNotNeg1(a int, bs ...int) int {
 	m := a
 	for _, b := range bs {
@@ -205,9 +214,11 @@ func minNotNeg1(a int, bs ...int) int {
 }
 
 func normalize(s string) string {
+
 	if s == "" {
 		return "$"
 	}
+
 	r := ""
 
 	if s[0] == 'A' {
@@ -224,6 +235,10 @@ func normalize(s string) string {
 		n := strings.Index(s, "~")
 		r += s[0 : n+1]
 		s = s[n+1:]
+	}
+
+	if s == "" {
+		return r + "$"
 	}
 
 	if s[0] == '-' {
@@ -270,6 +285,22 @@ func normalize(s string) string {
 
 	}
 	return r
+}
+
+func PathLength(s string) int {
+	return strings.Count(s, "][")
+}
+
+func GetPath(n Node) string {
+	var path string
+	for n != nil  {
+		path = n.GetCurrentPath() + path
+		n = n.GetPrev()
+	}
+	if path == "" {
+		path = "$"
+	}
+	return path
 }
 
 func ReadFileKey(s string) string {
@@ -342,7 +373,7 @@ func FlatJsonPath(s string, omitActions bool) string {
 	}
 
 	if s == "" {
-		return ""
+		return "$"
 	}
 
 	if s[0] == '-' {
@@ -810,6 +841,37 @@ func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{},
 	return result1, result2, nil
 }
 
+func GetSortedDiffs(docDiffs map[string]interface{}, fileName string) []interface{} {
+	sortedActions := make([]interface{}, len(docDiffs))
+
+	k := 0
+
+	for key, item := range docDiffs {
+		newDep := DependentObj{key, item.(string), fileName}
+
+		if k == 0 {
+			sortedActions[0] = newDep
+		} else {
+			for i := k; i > 0; i-- {
+
+				dep, isDep := sortedActions[i - 1].(DependentObj)
+				if isDep {
+					if PathLength(key) < PathLength(dep.JsonPath) {
+						sortedActions[i - 1] = newDep
+						sortedActions[i] = dep
+					} else {
+						sortedActions[i] = newDep
+						break
+					}
+				}
+			}
+		}
+		k++
+	}
+
+	return sortedActions
+}
+
 func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyName string, docDiffs map[string]interface{} ) error {
 
 	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
@@ -826,11 +888,43 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 
 	deleteActions := make(map[string]string)
 	seqDiff := make(map[string]string)
-	for key, item := range docDiffs {
+	depMap := make(map[string]interface{})
+	
+	sortedActions := GetSortedDiffs(docDiffs, fileName)
+
+	for i := range sortedActions {
+
+		dep := sortedActions[i].(DependentObj)
+		key := dep.JsonPath
+		var item interface{} = dep.Ref
+
+		fileKey := ReadFileKey(key)
+		fileAction := ReadFileAction(key)
+
+		if strings.HasPrefix(key, "R") {
+			//TODO: should reverse action
+			continue
+		}
+
+		if strings.HasPrefix(fileAction, "A") {
+			CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, workingDirV2 + string(os.PathSeparator) + fileKey)
+			continue
+		} else if strings.HasPrefix(fileAction, "D") {
+			//TODO: should delete file if there is no references
+			continue
+		}
+
 		if item == "" {
 			deleteActions[key] = ""
 		} else if strings.HasPrefix(key, "^") {
 			seqDiff[key] = item.(string)
+		} else if fileKey != "" {
+			depDiffs := depMap[fileKey].(map[string]interface{})
+			if depDiffs == nil {
+				depDiffs = make(map[string]interface{})
+				depMap[fileKey] = depDiffs
+			}
+			depDiffs[key] = item.(string)
 		} else {
 			mergeDoc.MergeByJSONPath(key, item.(string))
 		}
@@ -851,6 +945,10 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 	}
 
 	WriteToFile(dstFilePath, data)
+
+	for key, item := range depMap {
+		merge(workingDirV1, workingDirV2, key, objectKeyName, item.(map[string]interface{}))
+	}
 
 	return nil
 }
