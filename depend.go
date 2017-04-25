@@ -201,13 +201,11 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 		layer, isLayer := v.(map[string]interface{})
 		if isLayer {
 
-			if layer["_class"] == "symbolMaster" {
-				sid := layer["symbolID"]
-				if sid != nil {
-					dep.AddDependent(sid.(string), fileJsonPath2, fileJsonPath1, fileKey)
-				}
-
+			sid := layer["symbolID"]
+			if sid != nil {
+				dep.AddDependent(sid.(string), fileJsonPath2, fileJsonPath1, fileKey)
 			}
+
 			lid := layer["do_objectID"]
 
 			var objectID string

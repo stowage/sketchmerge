@@ -14,6 +14,8 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"github.com/mohae/deepcopy"
+	"path"
 
 )
 
@@ -301,6 +303,50 @@ func GetPath(n Node) string {
 		path = "$"
 	}
 	return path
+}
+
+func getActionWithoutReverse(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	if s[0] == 'R' {
+		s = s[1:]
+	}
+
+	return s
+}
+
+func ReversAction(s1 string, s2 string) (string, string) {
+	s1 = getActionWithoutReverse(s1)
+	s2 = getActionWithoutReverse(s2)
+
+	a1 := ReadFileAction(s1)
+
+	s1 = FlatJsonPath(s1, false)
+	s2 = FlatJsonPath(s2, false)
+
+	if s1[0] == 'A' {
+		sw := s1
+		s1 = "D" + a1[1:] + s1
+		s2 = sw
+	} else if s1[0] == 'D' {
+		sw := s1
+		s1 = "A" + a1[1:] + s1
+		s2 = sw
+	} else if s1[0] == '+' {
+		s1 = a1 + "-" + s1[1:]
+		s2 = ""
+	} else if s1[0] == '-' {
+		s1 = ""
+		s2 = ""
+	} else {
+		sw := s1
+		s1 = a1 + s2
+		s2 = sw
+	}
+
+	return s1, s2
 }
 
 func ReadFileKey(s string) string {
@@ -779,6 +825,7 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 
 	for idxDoc1, idxDoc2 := range doc1Changes {
 		if idxDoc2 == -1 {
+			log.Printf("src_path %v %v\n", srcPath, dstPath)
 			log.Printf("no doc2 pos %v %v\n", idxDoc1, idxDoc2)
 			continue
 		}
@@ -788,6 +835,7 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 			newslice[idxDoc1] = slice[idxDoc2]
 			slice[idxDoc2] = nil
 		} else {
+			log.Printf("src_path %v %v\n", srcPath, dstPath)
 			log.Printf("Sequence out of range %v %v\n", idxDoc1, len(slice))
 		}
 	}
@@ -888,8 +936,7 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 
 	deleteActions := make(map[string]string)
 	seqDiff := make(map[string]string)
-	depMap := make(map[string]interface{})
-	
+
 	sortedActions := GetSortedDiffs(docDiffs, fileName)
 
 	for i := range sortedActions {
@@ -898,33 +945,10 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 		key := dep.JsonPath
 		var item interface{} = dep.Ref
 
-		fileKey := ReadFileKey(key)
-		fileAction := ReadFileAction(key)
-
-		if strings.HasPrefix(key, "R") {
-			//TODO: should reverse action
-			continue
-		}
-
-		if strings.HasPrefix(fileAction, "A") {
-			CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, workingDirV2 + string(os.PathSeparator) + fileKey)
-			continue
-		} else if strings.HasPrefix(fileAction, "D") {
-			//TODO: should delete file if there is no references
-			continue
-		}
-
 		if item == "" {
 			deleteActions[key] = ""
 		} else if strings.HasPrefix(key, "^") {
 			seqDiff[key] = item.(string)
-		} else if fileKey != "" {
-			depDiffs := depMap[fileKey].(map[string]interface{})
-			if depDiffs == nil {
-				depDiffs = make(map[string]interface{})
-				depMap[fileKey] = depDiffs
-			}
-			depDiffs[key] = item.(string)
 		} else {
 			mergeDoc.MergeByJSONPath(key, item.(string))
 		}
@@ -946,23 +970,106 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 
 	WriteToFile(dstFilePath, data)
 
-	for key, item := range depMap {
-		merge(workingDirV1, workingDirV2, key, objectKeyName, item.(map[string]interface{}))
+	return nil
+}
+
+func updateFile(workingDirV1, workingDirV2, fileKey string) {
+	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
+	baseFileName := path.Base(targetFileName)
+
+	targetDir := strings.TrimSuffix(targetFileName, baseFileName)
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		os.MkdirAll(targetDir, 0777)
+	}
+	if _, err := os.Stat(targetFileName); os.IsExist(err) {
+		err = os.Remove(targetFileName)
+		if err != nil {
+			log.Println(err)
+		}
 	}
 
-	return nil
+	CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, targetFileName)
+}
+
+func segregateFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge)  {
+
+	mergeMap := make(map[string]FileMerge)
+
+	for i := range mergeJSON.MergeActions {
+		fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
+		mergeMap[fileName] = mergeJSON.MergeActions[i]
+	}
+
+	for i := range mergeJSON.MergeActions {
+		docDiffs := mergeJSON.MergeActions[i].FileDiff.Doc1Diffs
+
+		copyDiffs := deepcopy.Copy(docDiffs).(map[string]interface{})
+		for key, item := range copyDiffs {
+
+			originalKey := key
+
+			if strings.HasPrefix(key, "R") {
+
+				newKey, newItem := ReversAction( key, item.(string))
+
+				key = newKey
+				item = newItem
+				delete(mergeJSON.MergeActions[i].FileDiff.Doc1Diffs, originalKey)
+				mergeJSON.MergeActions[i].FileDiff.Doc1Diffs[key] = item.(string)
+			}
+
+			if key == "" {
+				continue
+			}
+
+			fileKey := ReadFileKey(key)
+			fileAction := ReadFileAction(key)
+
+
+			if fileKey != "" {
+				delete(mergeJSON.MergeActions[i].FileDiff.Doc1Diffs, originalKey)
+				mergeAction := mergeMap[fileKey]
+
+				if strings.HasPrefix(fileAction, "A") {
+					mergeAction.Action = ADD
+
+					updateFile(workingDirV1, workingDirV2, fileKey)
+					continue
+				} else if strings.HasPrefix(fileAction, "D") {
+					mergeAction.Action = DELETE
+					continue
+				}
+
+				if mergeAction.FileDiff.Doc1Diffs == nil {
+					mergeAction.FileDiff.Doc1Diffs = make(map[string]interface{})
+				}
+
+				mergeAction.FileDiff.Doc1Diffs[FlatJsonPath(key, false)] = FlatJsonPath(item.(string), false)
+			}
+		}
+
+
+	}
 }
 
 func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
 
+	segregateFileActions(workingDirV1, workingDirV2, mergeJSON)
+
 	for i := range mergeJSON.MergeActions {
+
+		fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
+
+		if !mergeJSON.MergeActions[i].IsDirectory && mergeJSON.MergeActions[i].Action == ADD {
+			updateFile(workingDirV1, workingDirV2, fileName)
+		}
 
 		if mergeJSON.MergeActions[i].FileDiff.Doc1Diffs == nil {
 			continue
 		}
 
 		if err := merge(workingDirV1, workingDirV2,
-			mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt,
+			fileName,
 			mergeJSON.MergeActions[i].FileDiff.ObjectKeyName,
 			mergeJSON.MergeActions[i].FileDiff.Doc1Diffs); err!=nil {
 			continue
