@@ -453,7 +453,7 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 	return docDep
 }
 
-func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) error {
+func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) (*DependentObjects, *DependentObjects, error) {
 
 	depObj1 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
 	depObj2 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
@@ -462,12 +462,12 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 	fileMap1, err1 := depObj1.buildDependencePaths(SOURCE, workingDirV1, workingDirV2, fileMerge, &depObj2)
 
 	if err1!=nil {
-		return err1
+		return nil, nil, err1
 	}
 
 	fileMap2, err2 := depObj2.buildDependencePaths(DESTINATION, workingDirV2, workingDirV1, fileMerge, &depObj1)
 	if err2!=nil {
-		return err2
+		return nil, nil, err2
 	}
 
 	info1, _ := json.MarshalIndent(depObj1, "", "  ")
@@ -481,5 +481,103 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 		fileMerge[i].FileDiff.DepDoc1 = addDependencies(SOURCE, fileMerge[i].FileKey, &depObj1, fileMerge[i].FileDiff.DepDoc1, fileMap1, make(map[string]bool))
 		fileMerge[i].FileDiff.DepDoc2 = addDependencies(DESTINATION, fileMerge[i].FileKey, &depObj2, fileMerge[i].FileDiff.DepDoc2, fileMap2, make(map[string]bool))
 	}
-	return nil;
+	return &depObj1, &depObj2, nil;
+}
+
+//Find dependent jsonpaths to matchingKey recursively
+//depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
+//matchingKey is merge jsonpath
+func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
+
+	matchingKeyWithouFile := FlatJsonPath(matchingKey, false)
+	//if it's delete action that will affect destination file so changing processing file
+	if strings.HasPrefix(matchingKeyWithouFile, "-") && docType == SOURCE {
+		//matchingAction := "+" + FlatJsonPath(matchingKey, true)
+
+		FindMatchingDiffs(DESTINATION, fileName, matchingKey, depPaths2, depPaths1, diffs)
+		return
+	}
+
+	//remove file action specific elements from jsonpath
+	flatMatch := FlatJsonPath(matchingKey, true)
+
+	//ignore sequence change dependencies
+	if strings.HasPrefix(matchingKeyWithouFile, "^") {
+		return
+	}
+
+	if strings.HasPrefix(matchingKey, "A") {
+		return
+	}
+	if strings.HasPrefix(matchingKey, "D") {
+		return
+	}
+
+	for key, item := range depPaths1 {
+
+
+		//remove all file actions from key jsonpath
+		flatKey := FlatJsonPath(key, true)
+
+		//find only dependent paths matching given matchingKey or having it as prefix
+		if flatKey == flatMatch || strings.HasPrefix(flatKey, flatMatch) {
+
+			paths, isPaths := item.([]interface{})
+			if isPaths {
+				//go thru all paths for given matchingKey jsonpath may look as follows:
+				//	"~meta.json~$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]": [
+				//	{
+				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"8291C1C6-561D-4A25-B542-79E8FE345D57\"]",
+				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
+				//	}
+				//	]
+				for i := range paths {
+					newKey := paths[i].(DependentObj).JsonPath
+					fileKey := ReadFileAction(key)
+					fileNewKey := ReadFileAction(newKey)
+
+					//log.Printf("fileName: %v -> %v\n", fileName, ReadFileKey(newKey) )
+
+					//if it reffers to actual file just ignore
+
+					//TODO: Better way to ignore dependencies in the same layer
+					//Ignore actions in the same layer except sorting
+					if fileNewKey == "" && !strings.HasPrefix(key,"^") {
+						continue
+					}
+					if fileName == ReadFileKey(newKey) {
+						continue
+					}
+
+					//if key refers to other file append to action which belong to this file
+					if fileKey != "" && fileNewKey == "" {
+						newKey = fileKey + newKey
+					}
+
+					dstActionPrefix := ""
+
+					//Mark all destination actions to source as reverse, should invert all actions
+					// + to - and invert changes
+					//this is required in order to delete dependend objects if referencing object has bean deleted
+					if docType == DESTINATION {
+						dstActionPrefix = "R"
+					}
+
+					//if there is similar element just ignore it
+					if diffs[dstActionPrefix + newKey] != nil {
+						continue
+					}
+
+					if !strings.HasPrefix(ReadFileKey(newKey), "pages/") || strings.HasPrefix(newKey, "A") || strings.HasPrefix(newKey, "D"){
+						//store new jsonpath pair
+						diffs[dstActionPrefix+newKey] = paths[i].(DependentObj).Ref //+ " ← " + key
+
+						//Look up dependencies recursively for newKey
+						FindMatchingDiffs(docType, fileName, newKey, depPaths1, depPaths2, diffs)
+					}
+				}
+			}
+		}
+	}
+
 }

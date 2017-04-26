@@ -74,10 +74,10 @@ type JsonStructureCompare struct {
 	ObjectKeyName string `json:"seq_key,omitempty"`
 
 	//Dependent objects for src document
-	DepDoc1 * DependentObjects `json:"-"`
+	DepDoc1 * DependentObjects `json:"dep_doc_1"`
 
 	//Dependent objects for dst document
-	DepDoc2 * DependentObjects `json:"-"`
+	DepDoc2 * DependentObjects `json:"dep_doc_2"`
 
 }
 
@@ -199,14 +199,14 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 		if subtree, ok := doc2TreeMap[key]; ok {
 			//if it has a difference append to difference map
 			if __jsonpath1, __jsonpath2 ,ok := jsc.CompareDocuments(&item, &subtree, pathDoc1  + `["` + key + `"]`, pathDoc2  + `["` + key + `"]`); !ok {
-				jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareProperties")
+				jsc.AddDoc1Diff(__jsonpath1, __jsonpath2, "CompareProperties")
 				jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareProperties")
 				hasDiff = true
 			}
 		} else {
 
 			jsc.addDoc2Diff("-" + pathDoc1 + `["` + key + `"]`,"", "CompareProperties")
-			jsc.addDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
+			jsc.AddDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
 			hasDiff = true
 		}
 
@@ -226,7 +226,7 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 	//collect only properties not doc1
 	for key, _:= range doc2TreeMap {
 		if _, ok := doc1TreeMap[key]; !ok {
-			jsc.addDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
+			jsc.AddDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
 			jsc.addDoc2Diff("+" + pathDoc2 + `["` + key + `"]`, pathDoc1, "CompareProperties")
 			hasDiff = true
 		}
@@ -300,7 +300,7 @@ func CompareSequence(objectKeyName string, doc1TreeArray []interface{}, doc2Tree
 }
 
 
-func (jsc * JsonStructureCompare) addDoc1Diff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
+func (jsc * JsonStructureCompare) AddDoc1Diff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
 	//log.Printf("doc1Diff: %v %v %v\n", from, jsonpathDoc1, jsonpathDoc2)
 	jsc.Doc1Diffs[jsonpathDoc1] = jsonpathDoc2
 }
@@ -358,11 +358,11 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 			//if there is no such element in doc2 array
 			jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
-			jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
+			jsc.AddDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
 			jsc.DepDoc2.AddDependentPath( "-" + jsonpathDoc1, "^" + pathDoc1, "^" + pathDoc2)
 			jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
 		} else if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc2]), jsonpathDoc1, jsonpathDoc2); !ok {
-			jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
+			jsc.AddDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
 			jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
 		}
 	}
@@ -378,7 +378,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 		if idxDoc1 == -1 {
 
 			//if there is no such element in doc1 array
-			jsc.addDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
+			jsc.AddDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
 			jsc.addDoc2Diff("+" + jsonpathDoc2, pathDoc1, "CompareSlices")
 			jsc.DepDoc1.AddDependentPath("-" + jsonpathDoc2, "^" + pathDoc2, "^" + pathDoc1)
 			jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
@@ -388,7 +388,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 	//if it's not a layers array compare it property by property
 	if len(doc1Changes) == 0 && len(doc2Changes) == 0 {
 		if !reflect.DeepEqual(doc1TreeArray, doc2TreeArray) {
-			jsc.addDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
+			jsc.AddDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
 			jsc.addDoc2Diff(pathDoc2, pathDoc1, "CompareSlices")
 
 			for idxDoc1 := range doc1TreeArray {
@@ -480,6 +480,16 @@ func NewJsonStructureCompare() *JsonStructureCompare {
 						"do_objectID",
 							&DependentObjects{ SOURCE,make(map[string]interface{}), make(map[string]interface{})},
 							&DependentObjects{ DESTINATION, make(map[string]interface{}), make(map[string]interface{})}}
+}
+
+func CreateJsonStructureCompare() JsonStructureCompare {
+	return JsonStructureCompare{make(map[string]interface{}),
+				     make(map[string]interface{}),
+				     make(map[string]interface{}),
+				     make(map[string]interface{}),
+				     "do_objectID",
+				     &DependentObjects{ SOURCE,make(map[string]interface{}), make(map[string]interface{})},
+				     &DependentObjects{ DESTINATION, make(map[string]interface{}), make(map[string]interface{})}}
 }
 
 func Test(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}) {

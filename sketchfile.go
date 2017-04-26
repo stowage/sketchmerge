@@ -14,6 +14,7 @@ import (
 	_"io"
 	"fmt"
 	"time"
+	"path"
 )
 
 type SketchLayerInfo struct {
@@ -236,6 +237,103 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 
 }
 
+func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key string) (SketchLayerInfo, ApplyAction) {
+	var pageID = ""
+	var pageName = ""
+
+	var artboardID = ""
+	var artboardName = ""
+
+	var niceDesc = ""
+	var niceDescShort = ""
+
+	var layerID = ""
+	var layerName string = ""
+	var layerPath string = ""
+
+	//Parse jsonpath in key
+	srcSel, srcact, _ := Parse(key)
+	doc := doc1
+
+	//Delete action usually belongs to destination document which is doc2
+	if /*item == "" &&*/ srcact == ValueDelete {
+		doc = doc2
+	}
+
+	//Walk thru parsed path key
+	_, lastNode, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
+
+		if prevNode == nil {
+			//This is root element which is page
+			layer := v.(map[string]interface{})
+			if layer != nil {
+				lname := layer["name"]
+				lid := layer["do_objectID"]
+				if lname == nil || lid == nil {
+					return true
+				}
+
+				pageName = lname.(string)
+				pageID = lid.(string)
+				layerPath = pageName
+
+			}
+		} else if prevNode.GetKey() == "layers" {
+			//This is any layer inside page
+			layer := v.(map[string]interface{})
+			if layer != nil {
+				lname := layer["name"]
+				lid := layer["do_objectID"]
+				//sid := layer["symbolID"]
+				if lname == nil || lid == nil {
+					return true
+				}
+
+				//if artboard is recognized
+				if layer["_class"] == "symbolMaster" {
+					artboardName = lname.(string)
+					artboardID = lid.(string)
+					//artboardID = sid.(string)
+					layerPath += "/" + artboardName
+				} else if layer["_class"] == "artboard" {
+					artboardName = lname.(string)
+					artboardID = lid.(string)
+					layerPath += "/" + artboardName
+				} else  {
+					layerName = lname.(string)
+					layerID = lid.(string)
+					layerPath += "/" + layerName
+				}
+			}
+
+		}
+		return true;
+	})
+
+	if err!=nil {
+		log.Printf("Error occurired while building nice diff: %v", err)
+	}
+
+	if pageID != "" && artboardID != "" && layerID != "" {
+		niceDescShort, niceDesc = GetNiceTextForLayer(srcact, layerName, pageName, artboardName, layerPath)
+	} else if layerID != "" {
+		niceDescShort, niceDesc = GetNiceTextForUnknownLayer(srcact, layerName, layerPath)
+	} else if artboardID != "" {
+		niceDescShort, niceDesc = GetNiceTextForArtboard(srcact, artboardName, pageName)
+	} else if pageID != "" {
+		niceDescShort, niceDesc = GetNiceTextForPage(srcact, pageName)
+	} else {
+		niceDescShort, niceDesc = GetNiceTextForUnknown(srcact, fmt.Sprintf("%v", lastNode.GetKey()))
+	}
+
+	diff := SketchLayerInfo{layerName, layerID,
+				artboardName, artboardID,
+				pageName, pageID,
+				niceDescShort, niceDesc}
+
+	return diff, srcact
+}
+
 
 //Builds nice json for pages only
 func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}) map[string]interface{}  {
@@ -252,97 +350,8 @@ func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[stri
 
 	//Go thru all differences jsonpath's in actual file
 	for key, item := range diff {
-		var pageID = ""
-		var pageName = ""
 
-		var artboardID = ""
-		var artboardName = ""
-
-		var niceDesc = ""
-		var niceDescShort = ""
-
-		var layerID = ""
-		var layerName string = ""
-		var layerPath string = ""
-
-		//Parse jsonpath in key
-		srcSel, srcact, _ := Parse(key)
-		doc := doc1
-
-		//Delete action usually belongs to destination document which is doc2
-		if item == "" && srcact == ValueDelete {
-			doc = doc2
-		}
-
-		//Walk thru parsed path key
-		_, lastNode, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
-
-			if prevNode == nil {
-				//This is root element which is page
-				layer := v.(map[string]interface{})
-				if layer != nil {
-					lname := layer["name"]
-					lid := layer["do_objectID"]
-					if lname == nil || lid == nil {
-						return true
-					}
-
-					pageName = lname.(string)
-					pageID = lid.(string)
-					layerPath = pageName
-
-				}
-			} else if prevNode.GetKey() == "layers" {
-				//This is any layer inside page
-				layer := v.(map[string]interface{})
-				if layer != nil {
-					lname := layer["name"]
-					lid := layer["do_objectID"]
-					sid := layer["symbolID"]
-					if lname == nil || lid == nil {
-						return true
-					}
-
-					//if artboard is recognized
-					if layer["_class"] == "symbolMaster" {
-						artboardName = lname.(string)
-						artboardID = sid.(string)
-						layerPath += "/" + artboardName
-					} else if layer["_class"] == "artboard" {
-						artboardName = lname.(string)
-						artboardID = lid.(string)
-						layerPath += "/" + artboardName
-					} else  {
-						layerName = lname.(string)
-						layerID = lid.(string)
-						layerPath += "/" + layerName
-					}
-				}
-
-			}
-			return true;
-		})
-
-		if err!=nil {
-			log.Printf("Error occurired while building nice diff: %v", err)
-		}
-
-		if pageID != "" && artboardID != "" && layerID != "" {
-			niceDescShort, niceDesc = GetNiceTextForLayer(srcact, layerName, pageName, artboardName, layerPath)
-		} else if layerID != "" {
-			niceDescShort, niceDesc = GetNiceTextForUnknownLayer(srcact, layerName, layerPath)
-		} else if artboardID != "" {
-			niceDescShort, niceDesc = GetNiceTextForArtboard(srcact, artboardName, pageName)
-		} else if pageID != "" {
-			niceDescShort, niceDesc = GetNiceTextForPage(srcact, pageName)
-		} else {
-			niceDescShort, niceDesc = GetNiceTextForUnknown(srcact, fmt.Sprintf("%v", lastNode.GetKey()))
-		}
-
-		diff := SketchLayerInfo{layerName, layerID,
-			artboardName, artboardID,
-			pageName, pageID,
-			niceDescShort, niceDesc}
+		diff, srcact := ReadKeyValue(doc1, doc2, key)
 
 		diff.SetDifference(srcact, skDiff, key, item.(string))
 
@@ -367,109 +376,6 @@ func ProduceNiceDiff(fileName string, doc1 map[string]interface{}, doc2 map[stri
 func WriteToFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0755 )
 }
-
-//Find dependent jsonpaths to matchingKey recursively
-//depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
-//matchingKey is merge jsonpath
-func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
-
-	matchingKeyWithouFile := FlatJsonPath(matchingKey, false)
-	//if it's delete action that will affect destination file so changing processing file
-	if strings.HasPrefix(matchingKeyWithouFile, "-") && docType == SOURCE {
-		//matchingAction := "+" + FlatJsonPath(matchingKey, true)
-
-		FindMatchingDiffs(DESTINATION, fileName, matchingKey, depPaths2, depPaths1, diffs)
-		return
-	}
-
-	//remove file action specific elements from jsonpath
-	flatMatch := FlatJsonPath(matchingKey, true)
-
-	//ignore sequence change dependencies
-	if strings.HasPrefix(matchingKeyWithouFile, "^") {
-		return
-	}
-
-	if strings.HasPrefix(matchingKey, "A") {
-		return
-	}
-	if strings.HasPrefix(matchingKey, "D") {
-		return
-	}
-
-	for key, item := range depPaths1 {
-
-
-		//remove all file actions from key jsonpath
-		flatKey := FlatJsonPath(key, true)
-
-		//find only dependent paths matching given matchingKey or having it as prefix
-		if flatKey == flatMatch || strings.HasPrefix(flatKey, flatMatch) {
-
-
-
-			paths, isPaths := item.([]interface{})
-			if isPaths {
-				//go thru all paths for given matchingKey jsonpath may look as follows
-				//	"~meta.json~$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]": [
-				//	{
-				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"8291C1C6-561D-4A25-B542-79E8FE345D57\"]",
-				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
-				//	},
-				//	{
-				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"5BE4BA40-5F69-4462-B0A6-DEA22B389233\"]",
-				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
-				//	},
-				//	{
-				//	"path": "+$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"][\"D00F61B0-476C-4F11-9C07-57DEA1C24D0C\"]",
-				//	"ref": "$[\"pagesAndArtboards\"][\"C416AD9F-4C8F-49F9-B431-DB6F5B964911\"][\"artboards\"]"
-				//	}
-				//	]
-				for i := range paths {
-					newKey := paths[i].(DependentObj).JsonPath
-					fileKey := ReadFileAction(key)
-					fileNewKey := ReadFileAction(newKey)
-
-
-
-					//log.Printf("fileName: %v -> %v\n", fileName, ReadFileKey(newKey) )
-
-					//if it reffers to actual file just ignore
-					if fileName == ReadFileKey(newKey) {
-						continue
-					}
-
-					//if key refers to other file append to action which belong to this file
-					if fileKey != "" && fileNewKey == "" {
-						newKey = fileKey + newKey
-					}
-
-					dstActionPrefix := ""
-
-					//Mark all destination actions to source as reverse, should invert all actions
-					// + to - and invert changes
-					//this is required in order to delete dependend objects if referencing object has bean deleted
-					if docType == DESTINATION {
-						dstActionPrefix = "R"
-					}
-
-					//if there is similar element just ignore it
-					if diffs[dstActionPrefix + newKey] != nil {
-						continue
-					}
-
-					//store new jsonpath pair
-					diffs[dstActionPrefix + newKey] = paths[i].(DependentObj).Ref //+ " ← " + key
-
-					//Look up dependencies recursively for newKey
-					FindMatchingDiffs(docType, fileName, newKey, depPaths1, depPaths2, diffs)
-				}
-			}
-		}
-	}
-
-}
-
 
 
 func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]byte, error) {
@@ -542,7 +448,7 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 	}
 
 
-	if err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
+	if _, _, err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
 		return nil, err
 	}
 
@@ -565,19 +471,6 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 
 		return mergeInfo, nil
 	} else {
-		/*for i := range fsMerge.MergeActions {
-			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
-				result, err := CompareJSONNice(workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt,  workingDirV2 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)
-				if err != nil {
-					return nil, err
-				}
-				fsMerge.MergeActions[i].FileDiff = *result
-
-
-			}
-		}*/
-
-
 
 		for i := range fsMerge.MergeActions {
 			if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
@@ -621,5 +514,256 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 	}
 }
 
+func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyName string, docDiffs map[string]interface{} ) error {
 
+	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
+	dstFilePath := workingDirV2 + string(os.PathSeparator) + fileName
+
+
+	jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
+
+	if err != nil {
+		return err
+	}
+
+	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
+
+	deleteActions := make(map[string]string)
+	seqDiff := make(map[string]string)
+
+	sortedActions := GetSortedDiffs(docDiffs, fileName)
+
+	for i := range sortedActions {
+
+		dep := sortedActions[i].(DependentObj)
+		key := dep.JsonPath
+		var item interface{} = dep.Ref
+
+		if item == "" {
+			deleteActions[key] = ""
+		} else if strings.HasPrefix(key, "^") {
+			seqDiff[key] = item.(string)
+		} else {
+			mergeDoc.MergeByJSONPath(key, item.(string))
+		}
+	}
+
+	for key, _ := range deleteActions {
+		mergeDoc.MergeByJSONPath("", key)
+	}
+
+	/*for key, item := range seqDiff {
+		mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item)
+	}*/
+
+	data, err := json.Marshal(mergeDoc.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	WriteToFile(dstFilePath, data)
+
+	return nil
+}
+
+func updateFile(workingDirV1, workingDirV2, fileKey string) {
+	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
+	baseFileName := path.Base(targetFileName)
+
+	targetDir := strings.TrimSuffix(targetFileName, baseFileName)
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		os.MkdirAll(targetDir, 0777)
+	}
+	if _, err := os.Stat(targetFileName); os.IsExist(err) {
+		err = os.Remove(targetFileName)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+
+	CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, targetFileName)
+}
+
+func createMergeAction(fileKey, fileAction string) FileMerge {
+
+	fileExt := filepath.Ext(fileKey)
+	fileName := strings.TrimSuffix(fileKey, fileExt)
+
+	mergeAction := FileMerge{ FileExt: fileExt, FileKey: fileName, IsDirectory: false, FileDiff: CreateJsonStructureCompare()}
+
+	if strings.HasPrefix(fileAction, "A") {
+		mergeAction.Action = ADD
+	} else if strings.HasPrefix(fileAction, "D") {
+		mergeAction.Action = DELETE
+	}
+
+	return mergeAction
+}
+
+//if strings.HasPrefix(key, "R") {
+//
+//newKey, newItem := ReversAction( key, item.(string))
+//
+//key = newKey
+//item = newItem
+//delete(mergeJSON.MergeActions[i].FileDiff.Doc1Diffs, originalKey)
+//mergeJSON.MergeActions[i].FileDiff.Doc1Diffs[key] = item.(string)
+//originalKey = key
+//
+//continue
+//}
+
+func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) ([]FileMerge) {
+
+	newMergeActions := make([]FileMerge, 0)
+
+	mergeMap := make(map[string]interface{})
+
+	for i := range mergeJSON.MergeActions {
+
+
+		for key, item := range mergeJSON.MergeActions[i].FileDiff.Doc1Diffs {
+
+			if strings.HasPrefix(key, "R") {
+				continue
+			}
+
+			fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
+			fileKey := ReadFileKey(key)
+			fileAction := ReadFileAction(key)
+
+			//fmt.Println("key: " + fileName + " " + fileKey)
+			if fileKey != "" {
+				fileName = fileKey
+			}
+
+
+			fileMerge, ok := mergeMap[fileName].(FileMerge)
+			if !ok {
+				fileMerge = createMergeAction(fileName, fileAction)
+				mergeMap[fileName] = fileMerge
+			}
+			fileMerge.FileDiff.Doc1Diffs[FlatJsonPath(key, false)] = FlatJsonPath(item.(string), false)
+		}
+
+
+	}
+
+	for _, value := range mergeMap {
+		newMergeActions = append(newMergeActions, value.(FileMerge))
+	}
+
+	return newMergeActions
+}
+
+func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
+
+	mergeActions := buildFileActions(workingDirV1, workingDirV2, mergeJSON)
+
+	info1, _ := json.MarshalIndent(mergeActions, "", "  ")
+	fmt.Printf("%v\n", string(info1))
+
+	for i := range mergeActions {
+
+		fileName := mergeActions[i].FileKey + mergeActions[i].FileExt
+
+		if !mergeActions[i].IsDirectory && mergeActions[i].Action == ADD {
+			updateFile(workingDirV1, workingDirV2, fileName)
+		}
+
+		if mergeActions[i].FileDiff.Doc1Diffs == nil {
+			continue
+		}
+
+		if err := merge(workingDirV1, workingDirV2,
+			fileName,
+			mergeActions[i].FileDiff.ObjectKeyName,
+			mergeActions[i].FileDiff.Doc1Diffs); err!=nil {
+			continue
+		}
+
+	}
+	return nil
+}
+
+func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string) error {
+
+	isSrcDir := false
+	isDstDir := false
+
+	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
+
+	if errv1 != nil {
+		return errv1
+	}
+
+	isSrcDir = sketchFileV1Info.IsDir()
+
+	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
+
+	if errv2 != nil {
+		return errv2
+	}
+
+	isDstDir = sketchFileV2Info.IsDir()
+
+	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
+	if err1!=nil {
+		return err1
+	}
+	defer removeWorkingDir(workingDirV1, isSrcDir)
+
+	if isSrcDir {
+		workingDirV1 = sketchFileV1
+	}
+
+	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
+	if  err2!=nil {
+		return err2
+	}
+	defer removeWorkingDir(workingDirV2, isDstDir)
+
+	if isDstDir {
+		workingDirV2 = sketchFileV2
+	}
+
+	if !isSrcDir {
+		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
+			return err
+		}
+	}
+
+	if !isDstDir {
+		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
+			return err
+		}
+	}
+
+	mergeFile, err := ioutil.ReadFile(mergeFileName)
+	if err != nil {
+		return err
+	}
+
+	var mergeJSON FileStructureMerge
+	var decoder = json.NewDecoder(bytes.NewReader(mergeFile))
+	decoder.UseNumber()
+
+	if err := decoder.Decode(&mergeJSON); err != nil {
+		return  err
+	}
+
+	if err := mergeActions(workingDirV1, workingDirV2, mergeJSON); err != nil  {
+		return err
+	}
+
+	if !isDstDir {
+		sketchFile := outputDir + string(os.PathSeparator) + strings.TrimPrefix(sketchFileV2, filepath.Dir(sketchFileV2))
+		//similar to zip -y -r -q -8 testVCS2.sketch ./pages/ ./previews/ document.json meta.json user.json
+		Zipit(workingDirV2, sketchFile)
+	}
+
+	return nil
+
+}
 

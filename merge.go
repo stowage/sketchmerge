@@ -12,10 +12,9 @@ import (
 	"io/ioutil"
 	"encoding/json"
 	"bytes"
-	"os"
-	"path/filepath"
-	"github.com/mohae/deepcopy"
-	"path"
+	_"os"
+	_"path/filepath"
+	_"path"
 
 )
 
@@ -326,11 +325,10 @@ func ReversAction(s1 string, s2 string) (string, string) {
 	s1 = FlatJsonPath(s1, false)
 	s2 = FlatJsonPath(s2, false)
 
-	if s1[0] == 'A' {
-		sw := s1
+	if a1 != "" && a1[0] == 'A' {
 		s1 = "D" + a1[1:] + s1
-		s2 = sw
-	} else if s1[0] == 'D' {
+		s2 = s1
+	} else if a1 != "" && a1[0] == 'D' {
 		sw := s1
 		s1 = "A" + a1[1:] + s1
 		s2 = sw
@@ -402,7 +400,7 @@ func ReadFileAction(s string) string {
 
 func FlatJsonPath(s string, omitActions bool) string {
 	if s == "" {
-		return "$"
+		return ""
 	}
 	r := ""
 
@@ -419,7 +417,7 @@ func FlatJsonPath(s string, omitActions bool) string {
 	}
 
 	if s == "" {
-		return "$"
+		return ""
 	}
 
 	if s[0] == '-' {
@@ -823,6 +821,8 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	slice := fordst.([]interface{})
 	newslice := make([]interface{}, len(slice))
 
+	log.Printf("doc changes %v\n", doc1Changes)
+
 	for idxDoc1, idxDoc2 := range doc1Changes {
 		if idxDoc2 == -1 {
 			log.Printf("src_path %v %v\n", srcPath, dstPath)
@@ -920,241 +920,4 @@ func GetSortedDiffs(docDiffs map[string]interface{}, fileName string) []interfac
 	return sortedActions
 }
 
-func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyName string, docDiffs map[string]interface{} ) error {
 
-	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
-	dstFilePath := workingDirV2 + string(os.PathSeparator) + fileName
-
-
-	jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
-
-	if err != nil {
-		return err
-	}
-
-	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
-
-	deleteActions := make(map[string]string)
-	seqDiff := make(map[string]string)
-
-	sortedActions := GetSortedDiffs(docDiffs, fileName)
-
-	for i := range sortedActions {
-
-		dep := sortedActions[i].(DependentObj)
-		key := dep.JsonPath
-		var item interface{} = dep.Ref
-
-		if item == "" {
-			deleteActions[key] = ""
-		} else if strings.HasPrefix(key, "^") {
-			seqDiff[key] = item.(string)
-		} else {
-			mergeDoc.MergeByJSONPath(key, item.(string))
-		}
-	}
-
-	for key, _ := range deleteActions {
-		mergeDoc.MergeByJSONPath("", key)
-	}
-
-	for key, item := range seqDiff {
-		mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item)
-	}
-
-	data, err := json.Marshal(mergeDoc.DstDocument)
-
-	if err != nil {
-		return err
-	}
-
-	WriteToFile(dstFilePath, data)
-
-	return nil
-}
-
-func updateFile(workingDirV1, workingDirV2, fileKey string) {
-	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
-	baseFileName := path.Base(targetFileName)
-
-	targetDir := strings.TrimSuffix(targetFileName, baseFileName)
-	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-		os.MkdirAll(targetDir, 0777)
-	}
-	if _, err := os.Stat(targetFileName); os.IsExist(err) {
-		err = os.Remove(targetFileName)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-
-	CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, targetFileName)
-}
-
-func segregateFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge)  {
-
-	mergeMap := make(map[string]FileMerge)
-
-	for i := range mergeJSON.MergeActions {
-		fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
-		mergeMap[fileName] = mergeJSON.MergeActions[i]
-	}
-
-	for i := range mergeJSON.MergeActions {
-		docDiffs := mergeJSON.MergeActions[i].FileDiff.Doc1Diffs
-
-		copyDiffs := deepcopy.Copy(docDiffs).(map[string]interface{})
-		for key, item := range copyDiffs {
-
-			originalKey := key
-
-			if strings.HasPrefix(key, "R") {
-
-				newKey, newItem := ReversAction( key, item.(string))
-
-				key = newKey
-				item = newItem
-				delete(mergeJSON.MergeActions[i].FileDiff.Doc1Diffs, originalKey)
-				mergeJSON.MergeActions[i].FileDiff.Doc1Diffs[key] = item.(string)
-			}
-
-			if key == "" {
-				continue
-			}
-
-			fileKey := ReadFileKey(key)
-			fileAction := ReadFileAction(key)
-
-
-			if fileKey != "" {
-				delete(mergeJSON.MergeActions[i].FileDiff.Doc1Diffs, originalKey)
-				mergeAction := mergeMap[fileKey]
-
-				if strings.HasPrefix(fileAction, "A") {
-					mergeAction.Action = ADD
-
-					updateFile(workingDirV1, workingDirV2, fileKey)
-					continue
-				} else if strings.HasPrefix(fileAction, "D") {
-					mergeAction.Action = DELETE
-					continue
-				}
-
-				if mergeAction.FileDiff.Doc1Diffs == nil {
-					mergeAction.FileDiff.Doc1Diffs = make(map[string]interface{})
-				}
-
-				mergeAction.FileDiff.Doc1Diffs[FlatJsonPath(key, false)] = FlatJsonPath(item.(string), false)
-			}
-		}
-
-
-	}
-}
-
-func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
-
-	segregateFileActions(workingDirV1, workingDirV2, mergeJSON)
-
-	for i := range mergeJSON.MergeActions {
-
-		fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
-
-		if !mergeJSON.MergeActions[i].IsDirectory && mergeJSON.MergeActions[i].Action == ADD {
-			updateFile(workingDirV1, workingDirV2, fileName)
-		}
-
-		if mergeJSON.MergeActions[i].FileDiff.Doc1Diffs == nil {
-			continue
-		}
-
-		if err := merge(workingDirV1, workingDirV2,
-			fileName,
-			mergeJSON.MergeActions[i].FileDiff.ObjectKeyName,
-			mergeJSON.MergeActions[i].FileDiff.Doc1Diffs); err!=nil {
-			continue
-		}
-
-	}
-	return nil
-}
-
-func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string) error {
-
-	isSrcDir := false
-	isDstDir := false
-
-	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
-
-	if errv1 != nil {
-		return errv1
-	}
-
-	isSrcDir = sketchFileV1Info.IsDir()
-
-	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
-
-	if errv2 != nil {
-		return errv2
-	}
-
-	isDstDir = sketchFileV2Info.IsDir()
-
-	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
-	if err1!=nil {
-		return err1
-	}
-	defer removeWorkingDir(workingDirV1, isSrcDir)
-
-	if isSrcDir {
-		workingDirV1 = sketchFileV1
-	}
-
-	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
-	if  err2!=nil {
-		return err2
-	}
-	defer removeWorkingDir(workingDirV2, isDstDir)
-
-	if isDstDir {
-		workingDirV2 = sketchFileV2
-	}
-
-	if !isSrcDir {
-		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
-			return err
-		}
-	}
-
-	if !isDstDir {
-		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
-			return err
-		}
-	}
-
-	mergeFile, err := ioutil.ReadFile(mergeFileName)
-	if err != nil {
-		return err
-	}
-
-	var mergeJSON FileStructureMerge
-	var decoder = json.NewDecoder(bytes.NewReader(mergeFile))
-	decoder.UseNumber()
-
-	if err := decoder.Decode(&mergeJSON); err != nil {
-		return  err
-	}
-
-	if err := mergeActions(workingDirV1, workingDirV2, mergeJSON); err != nil  {
-		return err
-	}
-
-	if !isDstDir {
-		sketchFile := outputDir + string(os.PathSeparator) + strings.TrimPrefix(sketchFileV2, filepath.Dir(sketchFileV2))
-		//similar to zip -y -r -q -8 testVCS2.sketch ./pages/ ./previews/ document.json meta.json user.json
-		Zipit(workingDirV2, sketchFile)
-	}
-
-	return nil
-
-}
