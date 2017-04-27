@@ -74,10 +74,10 @@ type JsonStructureCompare struct {
 	ObjectKeyName string `json:"seq_key,omitempty"`
 
 	//Dependent objects for src document
-	DepDoc1 * DependentObjects `json:"dep_doc_1"`
+	DepDoc1 * DependentObjects `json:"-"`
 
 	//Dependent objects for dst document
-	DepDoc2 * DependentObjects `json:"dep_doc_2"`
+	DepDoc2 * DependentObjects `json:"-"`
 
 }
 
@@ -341,10 +341,17 @@ func (jsc * JsonStructureCompare) removeDoc2ObjectRelocated(objectKeyValue strin
 //Compare each element in array node
 func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc2TreeArray []interface{}, pathDoc1 string, pathDoc2 string) (string, string, bool) {
 	//defer timeTrack(time.Now(), "CompareSlices " + path)
+
+	if pathDoc2 == "$[\"layers\"][1][\"layers\"]" {
+		fmt.Println()
+	}
+
 	doc1Changes, doc2Changes := CompareSequence(jsc.ObjectKeyName, doc1TreeArray, doc2TreeArray)
 
 	doc1ChangesCopy := deepcopy.Copy(doc1Changes).(map[int]int)
 	doc2ChangesCopy := deepcopy.Copy(doc2Changes).(map[int]int)
+	fmt.Printf("docChanges: %v , %v\n", doc1Changes, doc2Changes)
+
 
 	//go thru array associations with the same objectKeyName for doc1
 	for idxDoc1, idxDoc2 := range doc1Changes {
@@ -354,6 +361,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			//remove similar indeces
 			delete(doc1ChangesCopy, idxDoc1)
 		}
+
 		if idxDoc2 == -1 {
 
 			//if there is no such element in doc2 array
@@ -367,12 +375,15 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 		}
 	}
 
+
+
 	//go thru array associations with the same objectKeyName for doc2
 	for idxDoc2, idxDoc1 := range doc2Changes {
 		if idxDoc2 == idxDoc1 {
 			//remove similar indeces
 			delete(doc2ChangesCopy, idxDoc2)
 		}
+
 		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
 
 		if idxDoc1 == -1 {
@@ -384,6 +395,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
 		}
 	}
+
 
 	//if it's not a layers array compare it property by property
 	if len(doc1Changes) == 0 && len(doc2Changes) == 0 {
@@ -397,7 +409,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 				if idxDoc1 >= len(doc2TreeArray) {
 					//jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
-					//jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
+					//jsc.AddDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
 					jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
 					continue
 				}
@@ -406,7 +418,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 				jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc1]), jsc.DepDoc2, jsonpathDoc2)
 
 				//if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc1]), jsonpathDoc1, jsonpathDoc2); !ok {
-				//	jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
+				//	jsc.AddDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
 				//	jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
 				//}
 			}
@@ -418,7 +430,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 				for idxDoc2 := idxStart; idxDoc2 < idxEnd; idxDoc2++ {
 					jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
 					if idxDoc2 >= len(doc1TreeArray) {
-						//jsc.addDoc1Diff("-"+jsonpathDoc2, "", "CompareSlices")
+						//jsc.AddDoc1Diff("-"+jsonpathDoc2, "", "CompareSlices")
 						//jsc.addDoc2Diff("+"+jsonpathDoc2, pathDoc1, "CompareSlices")
 						jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
 					}
@@ -490,6 +502,31 @@ func CreateJsonStructureCompare() JsonStructureCompare {
 				     "do_objectID",
 				     &DependentObjects{ SOURCE,make(map[string]interface{}), make(map[string]interface{})},
 				     &DependentObjects{ DESTINATION, make(map[string]interface{}), make(map[string]interface{})}}
+}
+
+func BuildFileAction(fileAction FileActionType, fileName string) string {
+	switch fileAction {
+	case ADD:
+		return "A~" + fileName + "~$"
+	case DELETE:
+		return "D~" + fileName + "~$"
+	}
+	return ""
+}
+
+func (jsc * JsonStructureCompare) FileDependendObject(fileAction FileActionType, docType DocumentType, fileKey, fileName string) {
+
+	if !strings.HasPrefix(fileName, "pages/") {
+		return
+	}
+
+	dep := []interface{}{DependentObj{JsonPath:"$"}}
+
+	if docType == SOURCE {
+		jsc.DepDoc1.DepObj[strings.TrimPrefix(fileKey, "pages/")] = dep
+	} else if docType == DESTINATION {
+		jsc.DepDoc2.DepObj[strings.TrimPrefix(fileKey, "pages/")] = dep
+	}
 }
 
 func Test(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}) {

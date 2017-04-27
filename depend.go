@@ -375,11 +375,15 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 }
 
 //Convert dependent objects to depencies jsonpaths
+//depObj - global dependencies in all documents
+//docDep - dependencies to external or internal object only for one document
 func addDependencies(docType DocumentType, fileKey string, depObj * DependentObjects, docDep * DependentObjects, fileMap map[string]interface{}, stopFileKey map[string]bool) (*DependentObjects) {
 	if docDep == nil {
 		docDep = &DependentObjects{ docType, make(map[string]interface{}),make(map[string]interface{})}
 	}
-	for key, value := range docDep.DepObj {
+	//Find all global dependencies for references in this document
+	//We need wthis in order to build dependend json paths
+	for key, value := range docDep.DepObj { //Go thru all dependent object id's in a document
 
 		iPaths := depObj.DepObj[key]
 
@@ -397,6 +401,7 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 				//Add dependencies if it reffers to other file
 				if depPaths[j].(DependentObj).FileKey != fileKey {
 
+					//Add dependent path
 					docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, depPaths[j].(DependentObj).Ref, depPaths[j].(DependentObj).JsonPath)
 
 					//get file details from associated map build by buildDependencePaths in order to get particular dependent objects for file
@@ -484,11 +489,16 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 	return &depObj1, &depObj2, nil;
 }
 
+func FindMatchingDiffsForFile(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
+
+}
+
 //Find dependent jsonpaths to matchingKey recursively
 //depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
 //matchingKey is merge jsonpath
 func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
 
+	//remove file names from action jsonpath
 	matchingKeyWithouFile := FlatJsonPath(matchingKey, false)
 	//if it's delete action that will affect destination file so changing processing file
 	if strings.HasPrefix(matchingKeyWithouFile, "-") && docType == SOURCE {
@@ -501,11 +511,13 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 	//remove file action specific elements from jsonpath
 	flatMatch := FlatJsonPath(matchingKey, true)
 
-	//ignore sequence change dependencies
+	//ignore sequence change dependencies because they are refering to parent elements
 	if strings.HasPrefix(matchingKeyWithouFile, "^") {
 		return
 	}
 
+	//We shouldn't lookup matching element for file add/delete actions because it has $ document root action
+	//and we should not lookup all elements
 	if strings.HasPrefix(matchingKey, "A") {
 		return
 	}
@@ -514,7 +526,6 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 	}
 
 	for key, item := range depPaths1 {
-
 
 		//remove all file actions from key jsonpath
 		flatKey := FlatJsonPath(key, true)
@@ -554,6 +565,8 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 						newKey = fileKey + newKey
 					}
 
+					//We will mark all reverse actions with R letter and we will invert action
+					//while merging
 					dstActionPrefix := ""
 
 					//Mark all destination actions to source as reverse, should invert all actions
@@ -568,6 +581,9 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 						continue
 					}
 
+					//we should not look dependencies in other pages/* files because
+					//because lost references in that case will be processed correctlly
+					//but we should allow additions and deletions
 					if !strings.HasPrefix(ReadFileKey(newKey), "pages/") || strings.HasPrefix(newKey, "A") || strings.HasPrefix(newKey, "D"){
 						//store new jsonpath pair
 						diffs[dstActionPrefix+newKey] = paths[i].(DependentObj).Ref //+ " ← " + key
@@ -581,3 +597,4 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 	}
 
 }
+

@@ -53,6 +53,14 @@ const (
 	SequenceChange
 )
 
+const (
+	DeleteMarked = iota
+	MarkElementToDelete
+	Delete
+)
+
+type DeleteMode uint8
+
 type ApplyAction uint8
 
 var (
@@ -495,7 +503,7 @@ func getNode(s string) (Node, string, error) {
 	}
 }
 
-
+//Parse jsonpath expression to Note object model tree
 func Parse(s string) (Node, ApplyAction, error) {
 
 	var nn Node
@@ -583,6 +591,7 @@ func (md * MergeDocuments) setArrayElement(srcNode Node, dstNode Node) error {
 	return nil
 }
 
+//Add an element to sequence
 func (md * MergeDocuments) addArrayElement(srcNode Node, dstNode Node) error {
 	src, _, srcerr := srcNode.Apply(md.SrcDocument)
 	dst, lastDstNode, dsterr := dstNode.Apply(md.DstDocument)
@@ -611,6 +620,7 @@ func (md * MergeDocuments) addArrayElement(srcNode Node, dstNode Node) error {
 	return nil
 }
 
+//Delete an element from sequence array
 func (md * MergeDocuments) deleteArrayElement(dstNode Node) error {
 	_, lastDstNode, err := dstNode.Apply(md.DstDocument)
 
@@ -650,6 +660,101 @@ func (md * MergeDocuments) deleteArrayElement(dstNode Node) error {
 	return nil
 }
 
+
+//Delete an element from sequence array
+func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
+	_, lastDstNode, err := dstNode.Apply(md.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	prevNode := lastDstNode.GetPrev()
+	prevNode.SetNext(nil)
+
+	if prevNode == nil {
+		return NotFound
+	}
+
+	fordst, arrLastNode, err := dstNode.Apply(md.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	prevNode = prevNode.GetPrev()
+	prevNode.SetNext(nil)
+
+	if prevNode == nil {
+		return NotFound
+	}
+
+	findst, _, finerr := dstNode.Apply(md.DstDocument)
+
+	if finerr != nil {
+		return finerr
+	}
+
+	finArr := fordst.([]interface{})
+
+	k:=0
+	for i := 0 ; i < len(finArr); i++  {
+		if finArr[k] == nil && finArr[i] != nil {
+			finArr[k] = finArr[i]
+			finArr[i] = nil
+		}
+		if finArr[k] != nil {
+			k++
+		}
+	}
+	finArr = finArr[:k]
+
+	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
+	return nil
+}
+
+//Delete an element from sequence array
+func (md * MergeDocuments) markToDelArrayElement(dstNode Node) error {
+	_, lastDstNode, err := dstNode.Apply(md.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	prevNode := lastDstNode.GetPrev()
+	prevNode.SetNext(nil)
+
+	if prevNode == nil {
+		return NotFound
+	}
+
+	fordst, arrLastNode, err := dstNode.Apply(md.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	prevNode = prevNode.GetPrev()
+	prevNode.SetNext(nil)
+
+	if prevNode == nil {
+		return NotFound
+	}
+
+	findst, _, finerr := dstNode.Apply(md.DstDocument)
+
+	if finerr != nil {
+		return finerr
+	}
+
+	index := lastDstNode.GetKey().(int)
+	finArr := fordst.([]interface{})
+	finArr[index] = nil
+	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
+	return nil
+}
+
+//Add property
 func (md * MergeDocuments) addMapElement(srcNode Node, dstNode Node) error {
 	src, lastSrcNode, srcerr := srcNode.Apply(md.SrcDocument)
 	dst, _, dsterr := dstNode.Apply(md.DstDocument)
@@ -669,6 +774,7 @@ func (md * MergeDocuments) addMapElement(srcNode Node, dstNode Node) error {
 	return nil
 }
 
+//Set property
 func (md * MergeDocuments) setMapElement(srcNode Node, dstNode Node) error {
 	src, lastSrcNode, srcerr := srcNode.Apply(md.SrcDocument)
 	_, lastDstNode, dsterr := dstNode.Apply(md.DstDocument)
@@ -680,6 +786,7 @@ func (md * MergeDocuments) setMapElement(srcNode Node, dstNode Node) error {
 	if dsterr != nil {
 		return dsterr
 	}
+
 	prevNode := lastDstNode.GetPrev();
 	prevNode.SetNext(nil)
 
@@ -702,6 +809,7 @@ func (md * MergeDocuments) setMapElement(srcNode Node, dstNode Node) error {
 	return nil
 }
 
+//Delete property
 func (md * MergeDocuments) deleteMapElement(dstNode Node) error {
 	_, lastDstNode, err := dstNode.Apply(md.DstDocument)
 	key := lastDstNode.GetKey()
@@ -724,9 +832,8 @@ func (md * MergeDocuments) deleteMapElement(dstNode Node) error {
 	return nil
 }
 
-
-
-func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string) error {
+//Overwrites values for given jsonpaths
+func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string, mode DeleteMode) error {
 
 	if strings.HasPrefix(srcPath, "^") {
 
@@ -771,7 +878,13 @@ func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string) error
 		return md.setMapElement(srcSel, dstSel)
 	case *ArraySelection:
 		if srcact == ValueDelete {
-			return md.deleteArrayElement(dstSel)
+			if mode == MarkElementToDelete {
+				return md.markToDelArrayElement(dstSel)
+			} else if mode == DeleteMarked {
+				return md.deleteMarkedElements(dstSel)
+			} else {
+				return md.deleteArrayElement(dstSel)
+			}
 		}
 
 		if srcact == ValueAdd {
@@ -787,12 +900,18 @@ func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string) error
 	return nil
 }
 
+
+
+//Merge order sequence of an array
 func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath string, dstPath string) error {
 
+	//Check if its a sequence change action
 	if !strings.HasPrefix(srcPath, "^") {
 
 		return InvalidMergeAction
 	}
+
+	//Find nodes of source and destination arrays
 
 	srcSel, _, srcerr := Parse(srcPath)
 	dstSel, _, dsterr := Parse(dstPath)
@@ -818,21 +937,30 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	//build id associations by objectID
 	doc1Changes, _ := CompareSequence(objectKeyName, forsrc.([]interface{}), fordst.([]interface{}))
 
+	//Destination array reference
 	slice := fordst.([]interface{})
+
+	//New array where we will put relocated objects
 	newslice := make([]interface{}, len(slice))
 
 	log.Printf("doc changes %v\n", doc1Changes)
 
+	//doc1Changes will be a map associating on element position in other element position
 	for idxDoc1, idxDoc2 := range doc1Changes {
+		//Do nothing if there is no such ellement in corresponding array
 		if idxDoc2 == -1 {
 			log.Printf("src_path %v %v\n", srcPath, dstPath)
 			log.Printf("no doc2 pos %v %v\n", idxDoc1, idxDoc2)
 			continue
 		}
 
-
+		//if our position is within destination aray length change value position
+		//otherwise ignore
 		if idxDoc1 < len(newslice) {
+			//Put object to requered position idxDoc1, while getting it
+			//from destination at position idxDoc2
 			newslice[idxDoc1] = slice[idxDoc2]
+			//Mark placed object
 			slice[idxDoc2] = nil
 		} else {
 			log.Printf("src_path %v %v\n", srcPath, dstPath)
@@ -840,19 +968,23 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 		}
 	}
 
+	//Put all not relocated not marked slice[idxDoc2] = nil elements toavailable positions
 	j := 0
-	for i := range newslice {
-		if newslice[i] == nil {
-			for k:=j ; k<len(slice); k++ {
-				if slice[k] != nil {
+	for i := range newslice { //Go thru all new positions and find emty nil slots
+		if newslice[i] == nil { //If slot is found
+			for k:=j ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
+				if slice[k] != nil { //if element has been found save it in available slot and mark it
 					newslice[i] = slice[k]
 					slice[k] = nil
-					j = k + 1
+					j = k + 1 //remember last available probably next?
+					break
 				}
 			}
 		}
 	}
 
+	//Copy elements
+	//TODO: write a test case for that
 	copy(slice, newslice)
 
 	return nil
