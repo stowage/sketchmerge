@@ -489,10 +489,6 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 	return &depObj1, &depObj2, nil;
 }
 
-func FindMatchingDiffsForFile(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
-
-}
-
 //Find dependent jsonpaths to matchingKey recursively
 //depPaths - are jsonpaths build by addDependencies method, store all dependent merge actions into diffs array
 //matchingKey is merge jsonpath

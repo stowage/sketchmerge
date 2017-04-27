@@ -20,15 +20,17 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
-		fmt.Printf("    sketchmerge diff [optional] <merge_file> src_file_or_dir dst_file_or_dir ...\n")
-		fmt.Printf("    sketchmerge merge -o <output dir> <merge_file> src_file_or_dir dst_file_or_dir ...\n")
+		fmt.Printf("    sketchmerge diff [optional] <merge_file> <dst_file_or_dir> <src_file_or_dir> ...\n")
+		fmt.Printf("    sketchmerge merge -o <output dir> <merge_file> <dst_file_or_dir> <src_file_or_dir> ...\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Operations:\n")
 		fmt.Printf("	  diff - show difference of src and dst file\n")
 		fmt.Printf("	  merge - merge items using merge_file from src and dst file\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Optional parameters for 'diff' operation:\n")
-		fmt.Printf("	  --file-output=<path to file> (-f <path to file>) - output difference to file\n")
+		fmt.Printf("	  --file-output=<path to file> (-f <path to file>) - output difference to file or directory (-b)\n")
+		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge case in nice mode (-n)\n")
+		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are compared against baseline file")
 		fmt.Printf("	  --nice-description (-n) - analyze difference and provide natural language description\n")
 		fmt.Printf("	  (NOT IMPLEMENTED)--dependencies (-d) analyze objects dependencies\n")
 		fmt.Printf("\n")
@@ -40,7 +42,7 @@ func main() {
 			  "merge_actions": [
 			    {
 			      "file_key": "pages/892342FF-2A18-4BFC-9124-28AF6F0D3CEE.json",
-			      "action": 1,
+			      "file_copy_action": 1,
 			      "file_diff": {
 				"src_to_dst_diff": {
 				  "$[\"layers\"][0][\"layers\"][0][\"frame\"][\"x\"]": "$[\"layers\"][0][\"layers\"][0][\"frame\"][\"x\"]",
@@ -92,18 +94,29 @@ func main() {
 	if opType == DiffOpType {
 		files := make([]string,0)
 		outputToFile := ""
+		baselineVersion := ""
 		isNice := false
+		is3WayMerge := false
 		for argc := 1; argc < flag.NArg(); argc++ {
 			switch flag.Arg(argc) {
 			case "-n", "--nice-description":
 				isNice = true
 			case "-d", "--dependencies":
 				break
+			case "-b", "--baseline":
+				argc++
+				baselineVersion = flag.Arg(argc)
+				is3WayMerge = true
+				isNice = true
+				break
 			case "-f", "--file-output":
 				argc++
 				outputToFile = flag.Arg(argc)
 			default:
-				if strings.HasPrefix(flag.Arg(argc), "--file-output=") {
+				if strings.HasPrefix(flag.Arg(argc), "--baseline=") {
+					baselineVersion = strings.TrimPrefix(flag.Arg(argc), "--baseline=")
+					is3WayMerge = true
+				} else if strings.HasPrefix(flag.Arg(argc), "--file-output=") {
 					outputToFile = strings.TrimPrefix(flag.Arg(argc), "--file-output=")
 				} else {
 					files = append(files, flag.Arg(argc))
@@ -116,16 +129,42 @@ func main() {
 			os.Exit(1)
 		}
 
-		mergeInfo, err := sketchmerge.ProcessFileDiff(files[0], files[1], isNice)
-		if err!=nil {
-			fmt.Printf("Error occured: %v\n", err)
-			os.Exit(1)
-		}
+		if !is3WayMerge {
+			mergeInfo, err := sketchmerge.ProcessFileDiff(files[0], files[1], isNice)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
 
-		if outputToFile != "" {
-			sketchmerge.WriteToFile(outputToFile, mergeInfo)
+			if outputToFile != "" {
+				sketchmerge.WriteToFile(outputToFile, mergeInfo)
+			} else {
+				fmt.Println(string(mergeInfo))
+			}
 		} else {
-			fmt.Println(string(mergeInfo))
+			mergeInfoBaseToDst, err := sketchmerge.ProcessFileDiff(files[0], baselineVersion, isNice)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			if outputToFile != "" {
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + "dst.diff", mergeInfoBaseToDst)
+			} else {
+				fmt.Println(string(mergeInfoBaseToDst))
+			}
+
+			mergeInfoBaseToSrc, err := sketchmerge.ProcessFileDiff(files[1], baselineVersion, isNice)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			if outputToFile != "" {
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + "src.diff", mergeInfoBaseToSrc)
+			} else {
+				fmt.Println(string(mergeInfoBaseToSrc))
+			}
 		}
 
 
@@ -136,6 +175,7 @@ func main() {
 		outputToDir := ""
 		for argc := 1; argc < flag.NArg(); argc++ {
 			switch flag.Arg(argc) {
+
 			case "-o", "--output":
 				argc++
 				outputToDir = flag.Arg(argc)
