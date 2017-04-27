@@ -788,7 +788,10 @@ func (md * MergeDocuments) setMapElement(srcNode Node, dstNode Node) error {
 	}
 
 	prevNode := lastDstNode.GetPrev();
-	prevNode.SetNext(nil)
+
+	if prevNode != nil {
+		prevNode.SetNext(nil)
+	}
 
 	if prevNode == nil {
 		return NotFound

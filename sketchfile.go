@@ -749,7 +749,8 @@ func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStruct
 
 	mergeActions := buildFileActions(workingDirV1, workingDirV2, mergeJSON)
 
-
+	info1, _ := json.MarshalIndent(mergeActions, "", "  ")
+	fmt.Printf("%v\n", string(info1))
 
 	//For debug purpose
 	//for i := range mergeActions {
