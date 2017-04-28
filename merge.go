@@ -697,17 +697,18 @@ func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
 
 	finArr := fordst.([]interface{})
 
-	k:=0
-	for i := 0 ; i < len(finArr); i++  {
-		if finArr[k] == nil && finArr[i] != nil {
-			finArr[k] = finArr[i]
-			finArr[i] = nil
-		}
-		if finArr[k] != nil {
-			k++
-		}
-	}
-	finArr = finArr[:k]
+	//k:=0
+	//for i := 0 ; i < len(finArr); i++  {
+	//	if finArr[k] == nil && finArr[i] != nil {
+	//		finArr[k] = finArr[i]
+	//		finArr[i] = nil
+	//	}
+	//	if finArr[k] != nil {
+	//		k++
+	//	}
+	//}
+	//finArr = finArr[:k]
+	finArr = compactSlice(finArr)
 
 	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
 	return nil
@@ -903,7 +904,19 @@ func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string, mode 
 	return nil
 }
 
-
+func compactSlice(newslice []interface{}) []interface{} {
+	k:=0
+	for i := 0 ; i < len(newslice); i++  {
+		if newslice[k] == nil && newslice[i] != nil {
+			newslice[k] = newslice[i]
+			newslice[i] = nil
+		}
+		if newslice[k] != nil {
+			k++
+		}
+	}
+	return newslice[:k]
+}
 
 //Merge order sequence of an array
 func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath string, dstPath string) error {
@@ -971,25 +984,28 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 		}
 	}
 
+	newslice = compactSlice(newslice)
+	newslice = append(compactSlice(slice), newslice...)
+
 	//TODO: we have the same method to delete marked elements
 	//it shifts all nil values to the end
-	k:=0
-	for i := 0 ; i < len(newslice); i++  {
-		if newslice[k] == nil && newslice[i] != nil {
-			newslice[k] = newslice[i]
-			newslice[i] = nil
-		}
-		if newslice[k] != nil {
-			k++
-		}
-	}
-	newslice = newslice[:k]
-	for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
-		if slice[k] != nil { //if element has been found appen it to final array
-			newslice = append([]interface{}{slice[k]}, newslice...)
-			slice[k] = nil
-		}
-	}
+	//k:=0
+	//for i := 0 ; i < len(newslice); i++  {
+	//	if newslice[k] == nil && newslice[i] != nil {
+	//		newslice[k] = newslice[i]
+	//		newslice[i] = nil
+	//	}
+	//	if newslice[k] != nil {
+	//		k++
+	//	}
+	//}
+
+	//for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
+	//	if slice[k] != nil { //if element has been found appen it to final array
+	//		newslice = append([]interface{}{slice[k]}, newslice...)
+	//		slice[k] = nil
+	//	}
+	//}
 
 	//TODO: or we should use this algorithm
 	//Put all not relocated not marked slice[idxDoc2] = nil elements toavailable positions
