@@ -162,10 +162,109 @@ type JsonStructureCompare struct {
 	ObjectKeyName string `json:"seq_key,omitempty"`
 
 	//Dependent objects for src document
-	DepDoc1 * DependentObjects `json:"dep_doc1"`
+	DepDoc1 * DependentObjects `json:"-"`
 
 	//Dependent objects for dst document
-	DepDoc2 * DependentObjects `json:"dep_doc2"`
+	DepDoc2 * DependentObjects `json:"-"`
+
+}
+
+func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error) {
+
+	jsCompare := NewJsonStructureCompare()
+
+	var result1 map[string]interface{}
+	var result2 map[string]interface{}
+
+	if _, err := os.Stat(doc1File); os.IsNotExist(err) {
+		result1 = make(map[string]interface{})
+		//return jsCompare, nil
+	} else {
+		var err1 error
+		result1, err1 = readJSON(doc1File)
+
+		if err1 != nil {
+			return nil, err1
+		}
+	}
+
+	if _, err := os.Stat(doc2File); os.IsNotExist(err) {
+		result2 = make(map[string]interface{})
+		//return jsCompare, nil
+	} else {
+		var err2 error
+		result2, err2 = readJSON(doc2File)
+
+		if err2 != nil {
+			return nil, err2
+		}
+	}
+
+
+	jsCompare.Compare(result1, result2, "$")
+
+
+
+	return jsCompare, nil
+}
+
+
+
+//This method is part of nice json process
+func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, diffSrc string, diffDst string) {
+
+	var page interface{}
+	var artboard interface{}
+	var layer interface{}
+
+	//Actual difference could be Page, Artboard or Layer
+	//set it to existing difference by default
+	var actual Difference = &diff
+
+	//if PageID is recognized
+	if li.PageID != "" {
+		page = diff.PageDiff[li.PageID]
+
+		//if page is not exists then create it
+		if page == nil {
+			page = SketchPageDiff{Name: li.PageName, ArtboardDiff: make(map[string]interface{}), MainDiff: MainDiff{ Diff: make(map[string]interface{}), Description: make(map[string]interface{})}}
+			diff.PageDiff[li.PageID] = page
+		}
+		_page := page.(SketchPageDiff)
+
+		//set actual difference is Page
+		actual = &_page
+	}
+
+	//only if we are inside page try to recognize artboard
+	if page != nil && li.ArtboardID != "" {
+		artboard = page.(SketchPageDiff).ArtboardDiff[li.ArtboardID]
+
+		if artboard == nil {
+			artboard = SketchArtboardDiff{Name: li.ArtboardName,  LayerDiff: make(map[string]interface{}), MainDiff:MainDiff{ Diff: make(map[string]interface{}), Description: make(map[string]interface{})} }
+			page.(SketchPageDiff).ArtboardDiff[li.ArtboardID] = artboard
+		}
+		_artboard := artboard.(SketchArtboardDiff)
+
+		//set actual differnce to artboard
+		actual = &_artboard
+	}
+
+	//if it is artboard
+	if artboard != nil && li.LayerID != "" {
+		layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerID]
+
+		if layer == nil {
+			layer = SketchLayerDiff{Name: li.LayerName, MainDiff:MainDiff{ Diff: make(map[string]interface{}), Description: make(map[string]interface{})}}
+			artboard.(SketchArtboardDiff).LayerDiff[li.LayerID] = layer
+		}
+		_layer := layer.(SketchLayerDiff)
+
+		actual = &_layer
+	}
+
+
+	actual.SetDiff(action, diffSrc, diffDst, li.NiceDescriptionShort, li.NiceDescription)
 
 }
 
@@ -251,10 +350,12 @@ func (fsMerge * FileStructureMerge) ProduceDiffWithDependencies() ([]byte, error
 		fileAction := fsMerge.MergeActions[i].Action
 
 
-		if fileAction == ADD || fileAction == DELETE {
-			fileActionPath := BuildFileAction(fileAction, fileName)
-			fsMerge.MergeActions[i].FileDiff.Doc1Diffs[fileActionPath] = fileActionPath
-			fsMerge.MergeActions[i].FileDiff.Doc1Diffs["~document.json~$[\"pages\"]"] = "~document.json~$[\"pages\"]"
+		if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
+			if fileAction == ADD || fileAction == DELETE {
+				fileActionPath := BuildFileAction(fileAction, fileName)
+				fsMerge.MergeActions[i].FileDiff.Doc1Diffs[fileActionPath] = fileActionPath
+				fsMerge.MergeActions[i].FileDiff.Doc1Diffs["~document.json~$[\"pages\"]"] = "~document.json~$[\"pages\"]"
+			}
 		}
 
 	}
@@ -360,6 +461,15 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 }
 
 
+func isPageActionToOmit (fileName, key string) bool {
+	if strings.Contains(key, "~meta.json~") {
+		return false
+
+	}
+	return true
+}
+
+
 //Builds nice json for pages only
 func ProduceNiceDiff(fileAction FileActionType, fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}) map[string]interface{}  {
 
@@ -384,17 +494,32 @@ func ProduceNiceDiff(fileAction FileActionType, fileName string, doc1 map[string
 
 		FindMatchingDiffs(SOURCE, fileName, key, depPaths1, depPaths2, mathingDiffs)
 
+
 		for mKey, mItem := range mathingDiffs {
+			if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
+				if fileAction != MERGE {
+					if !isPageActionToOmit(fileName, mKey) {
+						continue
+					}
+				}
+			}
 			diff.SetDifference(srcact, skDiff, mKey, mItem.(string))
 		}
 
-		if fileAction == ADD || fileAction == DELETE {
-			fileActionPath := BuildFileAction(fileAction, fileName)
-			diff.SetDifference(srcact, skDiff, fileActionPath, fileActionPath)
-			diff.SetDifference(srcact, skDiff, "~document.json~$[\"pages\"]", "~document.json~$[\"pages\"]")
-		}
+		if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
+			if fileAction != MERGE {
+				fileKey := strings.TrimSuffix(strings.TrimPrefix(fileName, "pages" + string(os.PathSeparator)), filepath.Ext(fileName))
 
-		//log.Printf("action: %v %v", key, item)
+				fileActionPath := BuildFileAction(fileAction, fileName)
+				diff.SetDifference(srcact, skDiff, fileActionPath, fileActionPath)
+				if fileAction == ADD {
+					diff.SetDifference(srcact, skDiff, "~meta.json~+$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "~meta.json~$[\"pagesAndArtboards\"]")
+				} else if fileAction == DELETE {
+					diff.SetDifference(srcact, skDiff, "~meta.json~-$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "")
+				}
+				diff.SetDifference(srcact, skDiff, "~document.json~$[\"pages\"]", "~document.json~$[\"pages\"]")
+			}
+		}
 	}
 
 	if len(diff) > 0 {
@@ -584,51 +709,96 @@ func CompareSequence(objectKeyName string, doc1TreeArray []interface{}, doc2Tree
 	doc1Changes := make(map[int]int, len(doc1TreeArray))
 	doc2Changes := make(map[int]int, len(doc2TreeArray))
 	// create map of indexes for each object
-	keysDoc1 := make(map[string]int, len(doc1TreeArray))
-	keysDoc2 := make(map[string]int, len(doc2TreeArray))
+	keysDoc1 := make(map[string]interface{}, len(doc1TreeArray))
+	keysDoc2 := make(map[string]interface{}, len(doc2TreeArray))
 
 	//put doc1 indeces to map by given key
+	//there could be elements with the same object id
 	for index, item := range doc1TreeArray {
 		if itemTreeMap, isItemMap := item.(map[string]interface{}); isItemMap {
 			if objectId, ok := itemTreeMap[objectKeyName]; ok {
-				keysDoc1[objectId.(string)] = index
+				var arr []int
+				if value, ok := keysDoc1[objectId.(string)]; !ok {
+					arr = make([]int, 0)
+				} else {
+					arr = value.([]int)
+				}
+				keysDoc1[objectId.(string)] = append(arr, index)
 			}
 		}
 
 	}
 
 	//put doc2 indeces to map by given key
+	//there could be elements with the same object id
 	for index, item := range doc2TreeArray {
 		if itemTreeMap, isItemMap := item.(map[string]interface{}); isItemMap {
 			if objectId, ok := itemTreeMap[objectKeyName]; ok {
-				keysDoc2[objectId.(string)] = index
+				var arr []int
+				if value, ok := keysDoc2[objectId.(string)]; !ok {
+					arr = make([]int, 0)
+				} else {
+					arr = value.([]int)
+				}
+				keysDoc2[objectId.(string)] = append(arr, index)
 			}
 		}
 
 	}
 
+
+
 	//build index change map for doc1
-	for key, idxDoc1 := range keysDoc1 {
-		if idxDoc2, ok := keysDoc2[key]; ok {
+	for key, _idxDoc1 := range keysDoc1 {
+		if _idxDoc2, ok := keysDoc2[key]; ok {
 			//NOTE: indeces could be different
-			doc1Changes[idxDoc1] = idxDoc2
+			idxDoc1 := _idxDoc1.([]int)
+			idxDoc2 := _idxDoc2.([]int)
+			j:=0
+			for i := range idxDoc1 {
+				if j < len(idxDoc2) {
+					doc1Changes[idxDoc1[i]] = idxDoc2[j]
+					j++
+				} else {
+					doc1Changes[idxDoc1[i]] = -1
+				}
+			}
+
 		} else {
-			doc1Changes[idxDoc1] = -1
+			idxDoc1 := _idxDoc1.([]int)
+			for i := range idxDoc1 {
+				doc1Changes[idxDoc1[i]] = -1
+			}
 		}
 	}
 
 	//build index change map for doc2
-	for key, idxDoc2 := range keysDoc2 {
-		if idxDoc1, ok := keysDoc1[key]; ok {
+	for key, _idxDoc2 := range keysDoc2 {
+		if _idxDoc1, ok := keysDoc1[key]; ok {
 			//NOTE: indeces could be different
-			doc2Changes[idxDoc2] = idxDoc1
+			//doc2Changes[idxDoc2] = idxDoc1
+			idxDoc2 := _idxDoc2.([]int)
+			idxDoc1 := _idxDoc1.([]int)
+			j:=0
+			for i := range idxDoc2 {
+				if j < len(idxDoc1) {
+					doc2Changes[idxDoc2[i]] = idxDoc1[j]
+					j++
+				} else {
+					doc2Changes[idxDoc2[i]] = -1
+				}
+			}
 		} else {
-			doc2Changes[idxDoc2] = -1
+			idxDoc2 := _idxDoc2.([]int)
+			for i := range idxDoc2 {
+				doc2Changes[idxDoc2[i]] = -1
+			}
 		}
 
 		//log.Println("doc2Changes:" + strconv.Itoa(len(keysDoc2)) +":" + strconv.Itoa(idxDoc2) +":"+ strconv.Itoa(doc2Changes[idxDoc2]) )
 	}
 
+	log.Printf(" key1: %v , %v\nkey2: %v , %v\n", keysDoc1,doc1Changes, keysDoc2,  doc2Changes)
 
 	return doc1Changes, doc2Changes
 }
@@ -846,19 +1016,30 @@ func BuildFileAction(fileAction FileActionType, fileName string) string {
 
 func (jsc * JsonStructureCompare) FileDependendObject(fileAction FileActionType, docType DocumentType, fileKey, fileName string) {
 
-	if !strings.HasPrefix(fileName, "pages/") {
+	if !strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
 		return
 	}
 
 	dep := []interface{}{DependentObj{JsonPath:"$"}}
 
 	if docType == SOURCE {
-		jsc.DepDoc1.DepObj[strings.TrimPrefix(fileKey, "pages/")] = dep
+		jsc.DepDoc1.DepObj[strings.TrimPrefix(fileKey, "pages" + string(os.PathSeparator))] = dep
 		//fileActionPath := BuildFileAction(fileAction, fileName)
 		//jsc.AddDoc1Diff(fileActionPath, fileActionPath)
 		//
+		if fileAction == ADD {
+			jsc.AddDoc1Diff("$", "$", "FileDependendObject")
+		} else if fileAction == DELETE {
+			jsc.AddDoc1Diff("-$", "", "FileDependendObject")
+		}
 	} else if docType == DESTINATION {
-		jsc.DepDoc2.DepObj[strings.TrimPrefix(fileKey, "pages/")] = dep
+		jsc.DepDoc2.DepObj[strings.TrimPrefix(fileKey, "pages + string(os.PathSeparator)")] = dep
+
+		if fileAction == ADD {
+			jsc.addDoc2Diff("-$", "", "FileDependendObject")
+		} else if fileAction == DELETE {
+			jsc.addDoc2Diff("$", "$", "FileDependendObject")
+		}
 		//if fileAction == ADD {
 		//	fileAction = DELETE
 		//} else if fileAction == DELETE {
@@ -950,7 +1131,7 @@ func testCLI() {
 	fmt.Println(string(mergeInfo))
 
 
-	Test(flag.Arg(0) + "/document.json"/*"/pages/0651DBAC-C79E-4619-AFC3-A8B80B93E01D.json"*/, flag.Arg(1) + "/document.json"/*"/pages/0651DBAC-C79E-4619-AFC3-A8B80B93E01D.json"*/)
+	Test(flag.Arg(0) + "/document.json", flag.Arg(1) + "/document.json")
 
 }
 

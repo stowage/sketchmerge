@@ -12,9 +12,9 @@ import (
 )
 const GuidFormat = "^[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
 
-const RefImagesFormat = "^images/[a-z0-9]{40}$"
+const RefImagesFormat = "^images"  + string(os.PathSeparator) + "[a-z0-9]{40}$"
 
-const RefPagesFormat = "^pages/[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
+const RefPagesFormat = "^pages" + string(os.PathSeparator) +"[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
 
 var formats = []*regexp.Regexp { BuildReg(GuidFormat), BuildReg(RefImagesFormat), BuildReg(RefPagesFormat) }
 
@@ -111,8 +111,8 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 
 	}
 
-	if strings.HasPrefix(depKey, "pages/") {
-		depKey = strings.TrimPrefix(depKey, "pages/")
+	if strings.HasPrefix(depKey, "pages" + string(os.PathSeparator)) {
+		depKey = strings.TrimPrefix(depKey, "pages" + string(os.PathSeparator))
 	}
 
 	//In case we need to take GUID values in key elements uncomment this
@@ -279,8 +279,8 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 
 			//if its a new file
 			if mergeActionCode != MERGE {
-				if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
-					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
+				if strings.HasPrefix(mergeActions[i].FileKey, "pages" + string(os.PathSeparator)) {
+					objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages" + string(os.PathSeparator))
 					jsonFilePath := "~" + fullFilePath + "~$"
 					dep.AddDependent(objectID, fileActionPrefix+jsonFilePath, fileActionPrefix+jsonFilePath, mergeActions[i].FileKey)
 
@@ -357,8 +357,8 @@ func (dep * DependentObjects) buildDependencePaths(docType DocumentType, working
 			}
 
 			//if its a binary
-			if strings.HasPrefix(mergeActions[i].FileKey, "pages/") {
-				objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages/")
+			if strings.HasPrefix(mergeActions[i].FileKey, "pages" + string(os.PathSeparator)) {
+				objectID := strings.TrimPrefix(mergeActions[i].FileKey, "pages" + string(os.PathSeparator))
 				jsonFilePath := "~" + fullFilePath + "~$"
 				dep.AddDependent(objectID, fileActionPrefix+jsonFilePath, fileActionPrefix+jsonFilePath, mergeActions[i].FileKey)
 
@@ -580,7 +580,7 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 					//we should not look dependencies in other pages/* files because
 					//because lost references in that case will be processed correctlly
 					//but we should allow additions and deletions
-					if !strings.HasPrefix(ReadFileKey(newKey), "pages/") || strings.HasPrefix(newKey, "A") || strings.HasPrefix(newKey, "D"){
+					if !strings.HasPrefix(ReadFileKey(newKey), "pages" + string(os.PathSeparator)) || strings.HasPrefix(newKey, "A") || strings.HasPrefix(newKey, "D"){
 						//store new jsonpath pair
 						diffs[dstActionPrefix+newKey] = paths[i].(DependentObj).Ref //+ " ← " + key
 

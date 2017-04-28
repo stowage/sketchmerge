@@ -971,23 +971,43 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 		}
 	}
 
-	//Put all not relocated not marked slice[idxDoc2] = nil elements toavailable positions
-	j := 0
-	for i := range newslice { //Go thru all new positions and find emty nil slots
-		if newslice[i] == nil { //If slot is found
-			for k:=j ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
-				if slice[k] != nil { //if element has been found save it in available slot and mark it
-					newslice[i] = slice[k]
-					slice[k] = nil
-					j = k + 1 //remember last available probably next?
-					break
-				}
-			}
+	//TODO: we have the same method to delete marked elements
+	//it shifts all nil values to the end
+	k:=0
+	for i := 0 ; i < len(newslice); i++  {
+		if newslice[k] == nil && newslice[i] != nil {
+			newslice[k] = newslice[i]
+			newslice[i] = nil
+		}
+		if newslice[k] != nil {
+			k++
+		}
+	}
+	newslice = newslice[:k]
+	for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
+		if slice[k] != nil { //if element has been found appen it to final array
+			newslice = append(newslice, slice[k])
+			slice[k] = nil
 		}
 	}
 
+	//TODO: or we should use this algorithm
+	//Put all not relocated not marked slice[idxDoc2] = nil elements toavailable positions
+	//j := 0
+	//for i := range newslice { //Go thru all new positions and find emty nil slots
+	//	if newslice[i] == nil { //If slot is found
+	//		for k:=j ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
+	//			if slice[k] != nil { //if element has been found save it in available slot and mark it
+	//				newslice[i] = slice[k]
+	//				slice[k] = nil
+	//				j = k + 1 //remember last available probably next?
+	//				break
+	//			}
+	//		}
+	//	}
+	//}
+
 	//Copy elements
-	//TODO: write a test case for that
 	copy(slice, newslice)
 
 	return nil

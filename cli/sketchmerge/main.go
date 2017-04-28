@@ -41,7 +41,8 @@ func main() {
 		fmt.Printf(`		{
 			  "merge_actions": [
 			    {
-			      "file_key": "pages/892342FF-2A18-4BFC-9124-28AF6F0D3CEE.json",
+			      "file_key": "pages` + string(os.PathSeparator) + `892342FF-2A18-4BFC-9124-28AF6F0D3CEE",
+			      "file_ext": ".json",
 			      "file_copy_action": 1,
 			      "file_diff": {
 				"src_to_dst_diff": {
