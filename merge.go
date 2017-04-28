@@ -986,7 +986,7 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	newslice = newslice[:k]
 	for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
 		if slice[k] != nil { //if element has been found appen it to final array
-			newslice = append(newslice, slice[k])
+			newslice = append([]interface{}{slice[k]}, newslice...)
 			slice[k] = nil
 		}
 	}
