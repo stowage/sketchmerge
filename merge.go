@@ -904,13 +904,16 @@ func (md * MergeDocuments) MergeByJSONPath(srcPath string, dstPath string, mode 
 	return nil
 }
 
+//Functions moves all nil values of array to the end and cuts them
 func compactSlice(newslice []interface{}) []interface{} {
 	k:=0
 	for i := 0 ; i < len(newslice); i++  {
+		//if current position is nil but any forward value not swap it
 		if newslice[k] == nil && newslice[i] != nil {
 			newslice[k] = newslice[i]
 			newslice[i] = nil
 		}
+		//if next value not null move index to next value
 		if newslice[k] != nil {
 			k++
 		}

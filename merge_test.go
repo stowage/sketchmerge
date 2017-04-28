@@ -212,17 +212,17 @@ func TestMergeDocuments_MergeByJSONPath1(t *testing.T) {
 
 	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
 
-	mergeDoc.MergeByJSONPath(`$["layers"][2]["frame"]["constrainProportions"]`, `$["layers"][3]["frame"]["constrainProportions"]`)
+	mergeDoc.MergeByJSONPath(`$["layers"][2]["frame"]["constrainProportions"]`, `$["layers"][3]["frame"]["constrainProportions"]`, Delete)
 
-	mergeDoc.MergeByJSONPath(`+$["layers"][4]`, `$["layers"]`)
-	mergeDoc.MergeByJSONPath(`+$["layers"][0]["exportOptions"]`, `$["layers"][1]`)
-	mergeDoc.MergeByJSONPath("", `-$["layers"][0]["exportOptions"]`)
-	mergeDoc.MergeByJSONPath(`$["layers"][2]`, `$["layers"][3]`)
+	mergeDoc.MergeByJSONPath(`+$["layers"][4]`, `$["layers"]`, Delete)
+	mergeDoc.MergeByJSONPath(`+$["layers"][0]["exportOptions"]`, `$["layers"][1]`, Delete)
+	mergeDoc.MergeByJSONPath("", `-$["layers"][0]["exportOptions"]`, Delete)
+	mergeDoc.MergeByJSONPath(`$["layers"][2]`, `$["layers"][3]`, Delete)
 
-	mergeDoc.MergeByJSONPath(`$["fonts"][5]`, `$["fonts"][5]`)
-	mergeDoc.MergeByJSONPath(`$["fonts"][8]`, `$["fonts"][8]`)
-	mergeDoc.MergeByJSONPath(`+$["fonts"][12]`, `$["fonts"]`)
-	mergeDoc.MergeByJSONPath("", `-$["layers"][4]`)
+	mergeDoc.MergeByJSONPath(`$["fonts"][5]`, `$["fonts"][5]`, Delete)
+	mergeDoc.MergeByJSONPath(`$["fonts"][8]`, `$["fonts"][8]`, Delete)
+	mergeDoc.MergeByJSONPath(`+$["fonts"][12]`, `$["fonts"]`, Delete)
+	mergeDoc.MergeByJSONPath("", `-$["layers"][4]`, Delete)
 	mergeDoc.MergeSequenceByJSONPath("do_objectID",`^$["layers"]`, `^$["layers"]`)
 
 	mergeInfo2, _ := json.MarshalIndent(mergeDoc.DstDocument, "", "  ")

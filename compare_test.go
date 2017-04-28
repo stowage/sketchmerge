@@ -213,8 +213,8 @@ func TestJsonStructureCompare_Compare(t *testing.T) {
 	jsCompare := NewJsonStructureCompare()
 	jsCompare.Compare(jsonDoc1, jsonDoc2, "$")
 
-	jsCompare.Doc1Diffs = ProduceNiceDiff("test.json", jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath)
-	jsCompare.Doc2Diffs = ProduceNiceDiff("test.json", jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath)
+	jsCompare.Doc1Diffs = ProduceNiceDiff(MERGE, "test.json", jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath, nil)
+	jsCompare.Doc2Diffs = ProduceNiceDiff(MERGE,"test.json", jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath, nil)
 
 	//jsCompare.Doc1SeqDiffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1SeqDiffs, true)
 	//jsCompare.Doc2SeqDiffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2SeqDiffs, true)

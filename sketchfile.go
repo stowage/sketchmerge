@@ -68,7 +68,7 @@ func WriteToFile(path string, data []byte) error {
 }
 
 
-func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]byte, error) {
+func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool, idDiffMapDoc1, idDiffMapDoc2  map[string]interface{}) (*FileStructureMerge, error) {
 
 	isSrcDir := false
 	isDstDir := false
@@ -137,10 +137,12 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool) ([]b
 
 	if !isNice {
 
-		return fsMerge.ProduceDiffWithDependencies()
+		err := fsMerge.ProduceDiffWithDependencies()
+		return fsMerge, err
 	} else {
 
-		return fsMerge.ProduceNiceDiffWithDependencies(workingDirV1, workingDirV2)
+		err := fsMerge.ProduceNiceDiffWithDependencies(workingDirV1, workingDirV2, idDiffMapDoc1, idDiffMapDoc2)
+		return fsMerge, err
 	}
 }
 

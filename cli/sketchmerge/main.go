@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 	"github.com/stowage/sketchmerge"
-	_"path/filepath"
-	_"encoding/json"
+	"encoding/json"
+	"path/filepath"
 )
 
 const (
@@ -32,7 +32,7 @@ func main() {
 		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge case in nice mode (-n)\n")
 		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are compared against baseline file")
 		fmt.Printf("	  --nice-description (-n) - analyze difference and provide natural language description\n")
-		fmt.Printf("	  (NOT IMPLEMENTED)--dependencies (-d) analyze objects dependencies\n")
+		fmt.Printf("	  (NOT IMPLEMENTED)--dependencies (-d) ARE ENABLED\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Required parameters for 'merge' operations:\n")
 		fmt.Printf("	  --output=<path to dir> (-o <path to dir>) - output resulting sketch file to dir\n")
@@ -131,7 +131,13 @@ func main() {
 		}
 
 		if !is3WayMerge {
-			mergeInfo, err := sketchmerge.ProcessFileDiff(files[0], files[1], isNice)
+			fsMerge, err := sketchmerge.ProcessFileDiff(files[0], files[1], isNice, nil, nil)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			mergeInfo, err := json.MarshalIndent(fsMerge, "", "  ")
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
 				os.Exit(1)
@@ -143,26 +149,57 @@ func main() {
 				fmt.Println(string(mergeInfo))
 			}
 		} else {
-			mergeInfoBaseToDst, err := sketchmerge.ProcessFileDiff(files[0], baselineVersion, isNice)
+			var idDiffMapDoc1dst  map[string]interface{} = make(map[string]interface{})
+			var idDiffMapDoc2dst  map[string]interface{} = make(map[string]interface{})
+			fsMergeBaseToDst, err := sketchmerge.ProcessFileDiff(files[0], baselineVersion, isNice, idDiffMapDoc1dst, idDiffMapDoc2dst)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			var idDiffMapDoc1src  map[string]interface{} = make(map[string]interface{})
+			var idDiffMapDoc2src  map[string]interface{} = make(map[string]interface{})
+			fsMergeBaseToSrc, err := sketchmerge.ProcessFileDiff(files[1], baselineVersion, isNice, idDiffMapDoc1src, idDiffMapDoc2src)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			conflictData, err := sketchmerge.ProcessCollisionsData(
+				sketchmerge.PrepareCollisions(idDiffMapDoc1dst, idDiffMapDoc1src),
+				sketchmerge.PrepareCollisions(idDiffMapDoc2dst, idDiffMapDoc2src))
+
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			mergeInfoBaseToDst, err := json.MarshalIndent(fsMergeBaseToDst, "", "  ")
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+
+			mergeInfoBaseToSrc, err := json.MarshalIndent(fsMergeBaseToSrc, "", "  ")
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
 				os.Exit(1)
 			}
 
 			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + "dst.diff", mergeInfoBaseToDst)
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[0]), filepath.Ext(files[0])) + ".conflict", conflictData)
+			} else {
+				fmt.Println(string(conflictData))
+			}
+
+			if outputToFile != "" {
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[0]), filepath.Ext(files[0])) + "-dst.diff", mergeInfoBaseToDst)
 			} else {
 				fmt.Println(string(mergeInfoBaseToDst))
 			}
 
-			mergeInfoBaseToSrc, err := sketchmerge.ProcessFileDiff(files[1], baselineVersion, isNice)
-			if err != nil {
-				fmt.Printf("Error occured: %v\n", err)
-				os.Exit(1)
-			}
-
 			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + "src.diff", mergeInfoBaseToSrc)
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[1]), filepath.Ext(files[0]))  + "-src.diff", mergeInfoBaseToSrc)
 			} else {
 				fmt.Println(string(mergeInfoBaseToSrc))
 			}
