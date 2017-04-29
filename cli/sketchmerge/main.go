@@ -131,7 +131,13 @@ func main() {
 		}
 
 		if !is3WayMerge {
-			fsMerge, err := sketchmerge.ProcessFileDiff(files[0], files[1], isNice, nil, nil)
+			var fsMerge * sketchmerge.FileStructureMerge
+			var err error
+			if !isNice {
+				fsMerge, err = sketchmerge.ProcessFileDiff(files[0], files[1])
+			} else {
+				fsMerge, err = sketchmerge.ProcessNiceFileDiff(files[0], files[1])
+			}
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
 				os.Exit(1)
@@ -149,32 +155,7 @@ func main() {
 				fmt.Println(string(mergeInfo))
 			}
 		} else {
-			var idDiffMapDoc1dst  map[string]interface{} = make(map[string]interface{})
-			var idDiffMapDoc2dst  map[string]interface{} = make(map[string]interface{})
-			fsMergeBaseToDst, err := sketchmerge.ProcessFileDiff(files[0], baselineVersion, isNice, idDiffMapDoc1dst, idDiffMapDoc2dst)
-			if err != nil {
-				fmt.Printf("Error occured: %v\n", err)
-				os.Exit(1)
-			}
-
-			var idDiffMapDoc1src  map[string]interface{} = make(map[string]interface{})
-			var idDiffMapDoc2src  map[string]interface{} = make(map[string]interface{})
-			fsMergeBaseToSrc, err := sketchmerge.ProcessFileDiff(files[1], baselineVersion, isNice, idDiffMapDoc1src, idDiffMapDoc2src)
-			if err != nil {
-				fmt.Printf("Error occured: %v\n", err)
-				os.Exit(1)
-			}
-
-			conflictData, err := sketchmerge.ProcessCollisionsData(
-				sketchmerge.PrepareCollisions(idDiffMapDoc1dst, idDiffMapDoc1src),
-				sketchmerge.PrepareCollisions(idDiffMapDoc2dst, idDiffMapDoc2src))
-
-			if err != nil {
-				fmt.Printf("Error occured: %v\n", err)
-				os.Exit(1)
-			}
-
-			mergeInfoBaseToDst, err := json.MarshalIndent(fsMergeBaseToDst, "", "  ")
+			fsMergeBaseToSrc, err := sketchmerge.ProcessNiceFileDiff3Way(baselineVersion, files[0], files[1])
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
 				os.Exit(1)
@@ -187,19 +168,7 @@ func main() {
 			}
 
 			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[0]), filepath.Ext(files[0])) + ".conflict", conflictData)
-			} else {
-				fmt.Println(string(conflictData))
-			}
-
-			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[0]), filepath.Ext(files[0])) + "-dst.diff", mergeInfoBaseToDst)
-			} else {
-				fmt.Println(string(mergeInfoBaseToDst))
-			}
-
-			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[1]), filepath.Ext(files[0]))  + "-src.diff", mergeInfoBaseToSrc)
+				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[1]), filepath.Ext(files[0]))  + ".diff", mergeInfoBaseToSrc)
 			} else {
 				fmt.Println(string(mergeInfoBaseToSrc))
 			}

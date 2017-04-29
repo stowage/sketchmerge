@@ -58,17 +58,12 @@ func readJSON(docFile string) (map[string]interface{}, error) {
 }
 
 
-
-
-
-
-
 func WriteToFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0755 )
 }
 
 
-func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool, idDiffMapDoc1, idDiffMapDoc2  map[string]interface{}) (*FileStructureMerge, error) {
+func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMerge, error) {
 
 	isSrcDir := false
 	isDstDir := false
@@ -135,15 +130,188 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string, isNice bool, idDi
 		return nil, err
 	}
 
-	if !isNice {
 
-		err := fsMerge.ProduceDiffWithDependencies()
-		return fsMerge, err
-	} else {
+	err := fsMerge.ProduceDiffWithDependencies()
+	return fsMerge, err
 
-		err := fsMerge.ProduceNiceDiffWithDependencies(workingDirV1, workingDirV2, idDiffMapDoc1, idDiffMapDoc2)
-		return fsMerge, err
+}
+
+func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMerge, error) {
+
+	isSrcDir := false
+	isDstDir := false
+
+	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
+
+	if errv1 != nil {
+		return nil, errv1
 	}
+
+	isSrcDir = sketchFileV1Info.IsDir()
+
+	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
+
+	if errv2 != nil {
+		return nil, errv2
+	}
+
+	isDstDir = sketchFileV2Info.IsDir()
+
+	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
+	if err1!=nil {
+		return nil, err1
+	}
+	defer removeWorkingDir(workingDirV1, isSrcDir)
+
+	if isSrcDir {
+		workingDirV1 = sketchFileV1
+	}
+
+	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
+	if  err2!=nil {
+		return nil, err2
+	}
+	defer removeWorkingDir(workingDirV2, isDstDir)
+
+	if isDstDir {
+		workingDirV2 = sketchFileV2
+	}
+
+	if !isSrcDir {
+		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
+			return nil, err
+		}
+	}
+
+	if !isDstDir {
+		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
+			return nil, err
+		}
+	}
+
+	baseFileStruct, newFileStruct := ExtractSketchDirStruct(workingDirV1, workingDirV2)
+
+
+	fsMerge := new(FileStructureMerge)
+	fsMerge.FileSetChange(newFileStruct, baseFileStruct)
+
+	if err := fsMerge.CompareDocuments(workingDirV1, workingDirV2); err != nil {
+		return nil, err
+	}
+
+	if _, _, err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
+		return nil, err
+	}
+
+	err := fsMerge.ProduceNiceDiffWithDependencies("local", workingDirV1, workingDirV2)
+	return fsMerge, err
+
+}
+
+func ProcessNiceFileDiff3Way(sketchFileV0, sketchFileV1, sketchFileV2 string) (*FileStructureMerge, error) {
+
+	isBaseDir :=false
+	isSrcDir := false
+	isDstDir := false
+
+	sketchFileV0Info, errv0 := os.Stat(sketchFileV0)
+
+	if errv0 != nil {
+		return nil, errv0
+	}
+
+	isBaseDir = sketchFileV0Info.IsDir()
+
+	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
+
+	if errv1 != nil {
+		return nil, errv1
+	}
+
+	isSrcDir = sketchFileV1Info.IsDir()
+
+	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
+
+	if errv2 != nil {
+		return nil, errv2
+	}
+
+	isDstDir = sketchFileV2Info.IsDir()
+
+	workingDirV0, err0 := prepareWorkingDir(!isBaseDir)
+	if err0!=nil {
+		return nil, err0
+	}
+	defer removeWorkingDir(workingDirV0, isBaseDir)
+
+	if isBaseDir {
+		workingDirV0 = sketchFileV0
+	}
+
+	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
+	if err1!=nil {
+		return nil, err1
+	}
+	defer removeWorkingDir(workingDirV1, isSrcDir)
+
+	if isSrcDir {
+		workingDirV1 = sketchFileV1
+	}
+
+	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
+	if  err2!=nil {
+		return nil, err2
+	}
+	defer removeWorkingDir(workingDirV2, isDstDir)
+
+	if isDstDir {
+		workingDirV2 = sketchFileV2
+	}
+
+	if !isBaseDir {
+		if err := Unzip(sketchFileV0, workingDirV0); err != nil {
+			return nil, err
+		}
+	}
+
+	if !isSrcDir {
+		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
+			return nil, err
+		}
+	}
+
+	if !isDstDir {
+		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
+			return nil, err
+		}
+	}
+
+	baseFileStruct1, newFileStruct1 := ExtractSketchDirStruct(workingDirV1, workingDirV0)
+	fsMerge1 := new(FileStructureMerge)
+	fsMerge1.FileSetChange(newFileStruct1, baseFileStruct1)
+
+	baseFileStruct2, newFileStruct2 := ExtractSketchDirStruct(workingDirV2, workingDirV0)
+	fsMerge2 := new(FileStructureMerge)
+	fsMerge2.FileSetChange(newFileStruct2, baseFileStruct2)
+
+	if err := fsMerge1.CompareDocuments(workingDirV1, workingDirV0); err != nil {
+		return nil, err
+	}
+
+	if _, _, err := ProceedDependencies(workingDirV1, workingDirV0, fsMerge1.MergeActions); err!=nil {
+		return nil, err
+	}
+
+	if err := fsMerge2.CompareDocuments(workingDirV2, workingDirV0); err != nil {
+		return nil, err
+	}
+
+	if _, _, err := ProceedDependencies(workingDirV2, workingDirV0, fsMerge2.MergeActions); err!=nil {
+		return nil, err
+	}
+
+	return ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2, fsMerge1, fsMerge2)
+
 }
 
 //Performs 2-way merge using docDiff json paths

@@ -44,7 +44,7 @@ func (li * SketchLayerInfo) fingerprint(solt string) string {
 }
 
 type Difference interface {
-	SetDiff(action ApplyAction, actualPath, src , dst, name string) DiffObject
+	SetDiff(action ApplyAction, actualPath, src , dst, name, loc string) DiffObject
 	SetCollision(oid string)
 	GetDiff() map[string]interface{}
 }
@@ -93,7 +93,7 @@ func (sd* MainDiff) SetCollision(oid string) {
 	sd.DiffInfo["CollisionID"] = oid
 }
 
-func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name string) DiffObject  {
+func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, loc string) DiffObject  {
 
 	strAction := ""
 
@@ -108,10 +108,19 @@ func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name str
 		strAction = "SequenceChange"
 	}
 
-	diffs, ok := sd.Diff[actualPath].(DiffObject)
+
+	localDiffs, ok := sd.Diff[loc].(map[string]interface{})
 	if !ok {
-		sd.Diff[actualPath] = DiffObject{make(map[string]interface{}), make(map[string]interface{})}
-		diffs = sd.Diff[actualPath].(DiffObject)
+		localDiffs = make(map[string]interface{})
+
+		sd.Diff[loc] = localDiffs
+
+	}
+
+	diffs, ok := localDiffs[actualPath].(DiffObject)
+	if !ok {
+		diffs = DiffObject{make(map[string]interface{}), make(map[string]interface{})}
+		localDiffs[actualPath] = diffs
 	}
 
 	changes := diffs.Changes
@@ -236,7 +245,7 @@ func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error
 
 
 //This method is part of nice json process
-func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, diffSrc string, diffDst string) (string, Difference) {
+func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, diffSrc string, diffDst string, loc string) (string, Difference) {
 
 	var page interface{}
 	var artboard interface{}
@@ -296,7 +305,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		actualName = li.LayerName
 	}
 
-	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName)
+	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName, loc)
 
 	return actualID, actual
 
@@ -510,32 +519,20 @@ func isPageActionToOmit (fileName, key string) bool {
 	return true
 }
 
-
 //Builds nice json for pages only
-func ProduceNiceDiff(fileAction FileActionType, fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, idDiffMap map[string]interface{}) map[string]interface{}  {
+func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType, fileName string, doc1 map[string]interface{}, doc2 map[string]interface{}, diff map[string]interface{}, depPaths1 map[string]interface{}, depPaths2 map[string]interface{})  {
 
 	defer TimeTrack(time.Now(), "ProduceNiceDiff " + fileName)
 	if diff==nil {
-		return nil
+		return
 	}
-
-	niceDiff := make(map[string]interface{})
-
-	//Build difference maps
-	skDiff := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
 
 	//Go thru all differences jsonpath's in actual file
 	for key, item := range diff {
 
 		diff, srcact := ReadKeyValue(doc1, doc2, key)
 
-		actualID, diffObj := diff.SetDifference(srcact, skDiff, key, item.(string))
-
-		if idDiffMap != nil {
-			if _, ok := idDiffMap[actualID]; !ok {
-				idDiffMap[diff.fingerprint(fileName)] = diffObj
-			}
-		}
+		diff.SetDifference(srcact, *skDiff, key, item.(string), loc)
 
 		mathingDiffs := make(map[string]interface{})
 
@@ -550,7 +547,7 @@ func ProduceNiceDiff(fileAction FileActionType, fileName string, doc1 map[string
 					}
 				}
 			}
-			diff.SetDifference(srcact, skDiff, mKey, mItem.(string))
+			diff.SetDifference(srcact, *skDiff, mKey, mItem.(string), loc)
 		}
 
 		if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
@@ -558,26 +555,141 @@ func ProduceNiceDiff(fileAction FileActionType, fileName string, doc1 map[string
 				fileKey := strings.TrimSuffix(strings.TrimPrefix(fileName, "pages" + string(os.PathSeparator)), filepath.Ext(fileName))
 
 				fileActionPath := BuildFileAction(fileAction, fileName)
-				diff.SetDifference(srcact, skDiff, fileActionPath, fileActionPath)
+				diff.SetDifference(srcact, *skDiff, fileActionPath, fileActionPath, loc)
 				if fileAction == ADD {
-					diff.SetDifference(srcact, skDiff, "~meta.json~+$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "~meta.json~$[\"pagesAndArtboards\"]")
+					diff.SetDifference(srcact, *skDiff, "~meta.json~+$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "~meta.json~$[\"pagesAndArtboards\"]", loc)
 				} else if fileAction == DELETE {
-					diff.SetDifference(srcact, skDiff, "~meta.json~-$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "")
+					diff.SetDifference(srcact, *skDiff, "~meta.json~-$[\"pagesAndArtboards\"][\""+fileKey+"\"]", "", loc)
 				}
-				diff.SetDifference(srcact, skDiff, "~document.json~$[\"pages\"]", "~document.json~$[\"pages\"]")
+				diff.SetDifference(srcact, *skDiff, "~document.json~$[\"pages\"]", "~document.json~$[\"pages\"]", loc)
 			}
 		}
 	}
 
-	if len(diff) > 0 {
-		niceDiff["nice_diff"] = skDiff
-	}
-
-	return niceDiff
-
 }
 
-func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(workingDirV1, workingDirV2 string, idDiffMapDoc1, idDiffMapDoc2  map[string]interface{}) error {
+func (fm * FileMerge) NiceDifference(loc string, workingDirV1, workingDirV2 string, skDiff1 SketchDiff, skDiff2 SketchDiff) error {
+	doc1File := workingDirV1 + string(os.PathSeparator) + fm.FileKey + fm.FileExt
+	doc2File := workingDirV2 + string(os.PathSeparator) + fm.FileKey + fm.FileExt
+
+	var result1 map[string]interface{}
+	var result2 map[string]interface{}
+
+	if _, err := os.Stat(doc1File); os.IsNotExist(err) {
+		result1 = make(map[string]interface{})
+	} else {
+		var err1 error
+		result1, err1 = readJSON(doc1File)
+
+		if err1 != nil {
+			return err1
+		}
+	}
+
+
+	if _, err := os.Stat(doc2File); os.IsNotExist(err) {
+		result2 = make(map[string]interface{})
+	} else {
+		var err2 error
+		result2, err2 = readJSON(doc2File)
+
+		if err2 != nil {
+			return err2
+		}
+	}
+
+	jsCompare := fm.FileDiff
+
+	fileName := fm.FileKey + fm.FileExt
+	fileAction := fm.Action
+
+	skDiff1.ProduceNiceDiff(loc, fileAction, fileName, result1, result2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath)
+
+	if fileAction == ADD {
+		fileAction = DELETE
+	} else if fileAction == DELETE {
+		fileAction = ADD
+	}
+
+	skDiff2.ProduceNiceDiff(loc, fileAction, fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath)
+
+	return nil
+}
+
+func ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2 string, fsMerge1 * FileStructureMerge, fsMerge2 * FileStructureMerge) (*FileStructureMerge,error) {
+	fmMap := make(map[string]FileMerge)
+	sk1Map := make(map[string]interface{})
+	sk2Map := make(map[string]interface{})
+
+	for i := range fsMerge1.MergeActions {
+		fm := fsMerge1.MergeActions[i]
+		fileName := fm.FileKey + fm.FileExt
+		fmMap[fileName] = fm
+
+		if filepath.Ext(strings.ToLower(fm.FileKey + fm.FileExt)) != ".json" {
+			continue
+		}
+
+		skDiff1 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+		skDiff2 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+		if err :=fm.NiceDifference("local", workingDirV1, workingDirV0, skDiff1, skDiff2); err != nil {
+			return nil, err
+		}
+		sk1Map[fileName] = skDiff1
+		sk2Map[fileName] = skDiff2
+
+	}
+
+	for i := range fsMerge2.MergeActions {
+
+		fm := fsMerge2.MergeActions[i]
+		fileName := fsMerge2.MergeActions[i].FileKey + fsMerge2.MergeActions[i].FileExt
+		skDiff1 := sk1Map[fileName]
+		skDiff2 := sk2Map[fileName]
+
+		if skDiff1 == nil || skDiff2 == nil {
+			fmMap[fileName] = fsMerge2.MergeActions[i]
+			skDiff1 = SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+			skDiff2 = SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+
+			if filepath.Ext(strings.ToLower(fm.FileKey + fm.FileExt)) != ".json" {
+				continue
+			}
+
+			sk1Map[fileName] = skDiff1
+			sk2Map[fileName] = skDiff2
+		}
+
+		if filepath.Ext(strings.ToLower(fm.FileKey + fm.FileExt)) != ".json" {
+			continue
+		}
+
+		if err :=fm.NiceDifference("remote", workingDirV2, workingDirV0, skDiff1.(SketchDiff), skDiff2.(SketchDiff)); err != nil {
+			return nil, err
+		}
+	}
+
+	fsMerge := FileStructureMerge{make([]FileMerge, len(fmMap) )}
+
+	i := 0
+	for fileName, item := range fmMap {
+
+		skDiff1 := sk1Map[fileName]
+		skDiff2 := sk2Map[fileName]
+
+		item.FileDiff.Doc1Diffs = map[string]interface{}{"nice_diff" : skDiff1}
+		item.FileDiff.Doc2Diffs = map[string]interface{}{"nice_diff" : skDiff2}
+
+		fsMerge.MergeActions[i] = item
+		i++
+
+	}
+
+	return &fsMerge, nil
+}
+
+
+func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(loc string, workingDirV1, workingDirV2 string) error {
 	for i := range fsMerge.MergeActions {
 		if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
 			doc1File := workingDirV1 + string(os.PathSeparator) + fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt
@@ -613,14 +725,27 @@ func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(workingDirV1
 
 			fileName := fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt
 			fileAction := fsMerge.MergeActions[i].Action
-			fsMerge.MergeActions[i].FileDiff.Doc1Diffs = ProduceNiceDiff(fileAction, fileName, result1, result2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath, idDiffMapDoc1)
+			skDiff1 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+
+			skDiff1.ProduceNiceDiff(loc, fileAction, fileName, result1, result2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath)
+
+			if len(jsCompare.Doc1Diffs) > 0 {
+				fsMerge.MergeActions[i].FileDiff.Doc1Diffs = map[string]interface{}{ "nice_diff" : skDiff1 }
+			}
 
 			if fileAction == ADD {
 				fileAction = DELETE
 			} else if fileAction == DELETE {
 				fileAction = ADD
 			}
-			fsMerge.MergeActions[i].FileDiff.Doc2Diffs = ProduceNiceDiff(fileAction, fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath, idDiffMapDoc2)
+
+			skDiff2 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+
+			skDiff2.ProduceNiceDiff(loc, fileAction, fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath)
+
+			if len(jsCompare.Doc2Diffs) > 0 {
+				fsMerge.MergeActions[i].FileDiff.Doc2Diffs = map[string]interface{}{ "nice_diff" : skDiff2 }
+			}
 		} else {
 			fsMerge.MergeActions[i].Action = ADD
 		}

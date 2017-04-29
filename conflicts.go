@@ -33,9 +33,9 @@ func PrepareCollisions(idDiffMapDocDst, idDiffMapDocSrc map[string]interface{}) 
 				collisionCodes[key] = code
 			}
 
-			localBrunch := MainDiff{Diff: itemDst.(Difference).GetDiff()}
+			localBrunch := MainDiff{Diff: itemDst.(Difference).GetDiff()["local"].(map[string]interface{})}
 			itemDst.(Difference).SetCollision(code)
-			remoteBrunch := MainDiff{Diff: itemSrc.(Difference).GetDiff()}
+			remoteBrunch := MainDiff{Diff: itemSrc.(Difference).GetDiff()["local"].(map[string]interface{})}
 			itemSrc.(Difference).SetCollision(code)
 			collisions.Resolutions[code] = Resolution{localBrunch, remoteBrunch}
 		}
