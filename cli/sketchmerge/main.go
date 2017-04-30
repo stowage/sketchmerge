@@ -150,7 +150,10 @@ func main() {
 			}
 
 			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile, mergeInfo)
+				if err := sketchmerge.WriteToFile(outputToFile, mergeInfo); err!=nil {
+					fmt.Printf("Error occured: %v\n", err)
+					os.Exit(1)
+				}
 			} else {
 				fmt.Println(string(mergeInfo))
 			}
@@ -168,7 +171,21 @@ func main() {
 			}
 
 			if outputToFile != "" {
-				sketchmerge.WriteToFile(outputToFile + string(os.PathSeparator) + strings.TrimSuffix(filepath.Base(files[1]), filepath.Ext(files[0]))  + ".diff", mergeInfoBaseToSrc)
+				if fileInfo, err := os.Stat(outputToFile); fileInfo != nil && fileInfo.IsDir() {
+					if err != nil {
+						fmt.Printf("Error occured: %v\n", err)
+						os.Exit(1)
+					}
+					if err := sketchmerge.WriteToFile(outputToFile+string(os.PathSeparator)+strings.TrimSuffix(filepath.Base(files[1]), filepath.Ext(files[0]))+".diff", mergeInfoBaseToSrc); err!=nil {
+						fmt.Printf("Error occured: %v\n", err)
+						os.Exit(1)
+					}
+				} else {
+					if err := sketchmerge.WriteToFile(outputToFile, mergeInfoBaseToSrc); err!=nil {
+						fmt.Printf("Error occured: %v\n", err)
+						os.Exit(1)
+					}
+				}
 			} else {
 				fmt.Println(string(mergeInfoBaseToSrc))
 			}

@@ -677,8 +677,12 @@ func ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2 string, 
 		skDiff1 := sk1Map[fileName]
 		skDiff2 := sk2Map[fileName]
 
-		item.FileDiff.Doc1Diffs = map[string]interface{}{"nice_diff" : skDiff1}
-		item.FileDiff.Doc2Diffs = map[string]interface{}{"nice_diff" : skDiff2}
+		if skDiff1 != nil {
+			item.FileDiff.Doc1Diffs = map[string]interface{}{"nice_diff": skDiff1}
+		}
+		if skDiff2 != nil {
+			item.FileDiff.Doc2Diffs = map[string]interface{}{"nice_diff": skDiff2}
+		}
 
 		fsMerge.MergeActions[i] = item
 		i++
