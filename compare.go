@@ -35,6 +35,7 @@ type SketchLayerInfo struct {
 	PageName string
 	PageID string
 	ActualPath string
+	ClassName string
 	NiceDescriptionShort string
 	NiceDescription string
 }
@@ -44,7 +45,7 @@ func (li * SketchLayerInfo) fingerprint(solt string) string {
 }
 
 type Difference interface {
-	SetDiff(action ApplyAction, actualPath, src , dst, name, loc string) DiffObject
+	SetDiff(action ApplyAction, actualPath, src , dst, name, className, loc string) DiffObject
 	SetCollision(oid string)
 	GetDiff() map[string]interface{}
 }
@@ -93,7 +94,7 @@ func (sd* MainDiff) SetCollision(oid string) {
 	sd.DiffInfo["CollisionID"] = oid
 }
 
-func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, loc string) DiffObject  {
+func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, className, loc string) DiffObject  {
 
 	strAction := ""
 
@@ -127,6 +128,10 @@ func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, lo
 	descriptions := diffs.Description
 
 	descriptions["name"] = name
+
+	if className != "" {
+		descriptions["class"] = className
+	}
 
 	if preAction, ok := descriptions["action"].(string); ok {
 		if preAction == "SequenceChange" {
@@ -256,6 +261,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 	var actual Difference = &diff
 	var actualID string
 	var actualName string
+	var className string
 
 	//if PageID is recognized
 	if li.PageID != "" {
@@ -272,6 +278,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		actual = &_page
 		actualID = li.PageID
 		actualName = li.PageName
+		className = li.ClassName
 	}
 
 	//only if we are inside page try to recognize artboard
@@ -288,6 +295,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		actual = &_artboard
 		actualID = li.ArtboardID
 		actualName = li.ArtboardName
+		className = li.ClassName
 	}
 
 	//if it is artboard
@@ -303,9 +311,10 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		actual = &_layer
 		actualID = li.LayerID
 		actualName = li.LayerName
+		className = li.ClassName
 	}
 
-	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName, loc)
+	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName, className, loc)
 
 	return actualID, actual
 
@@ -423,6 +432,8 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 
 	var actualPath string = ""
 
+	var className = ""
+
 	//Parse jsonpath in key
 	srcSel, srcact, _ := Parse(key)
 	doc := doc1
@@ -441,6 +452,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 			if layer != nil {
 				lname := layer["name"]
 				lid := layer["do_objectID"]
+				lclass := layer["_class"]
 				if lname == nil || lid == nil {
 					return true
 				}
@@ -449,6 +461,9 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 				pageID = lid.(string)
 				layerPath = pageName
 				actualPath = GetPath(node)
+				if lclass != nil {
+					className = lclass.(string)
+				}
 
 			}
 		} else if prevNode.GetKey() == "layers" {
@@ -457,6 +472,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 			if layer != nil {
 				lname := layer["name"]
 				lid := layer["do_objectID"]
+				lclass := layer["_class"]
 				//sid := layer["symbolID"]
 				if lname == nil || lid == nil {
 					return true
@@ -469,16 +485,25 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 					//artboardID = sid.(string)
 					layerPath += "/" + artboardName
 					actualPath =  GetPath(node)
+					if lclass != nil {
+						className = lclass.(string)
+					}
 				} else if layer["_class"] == "artboard" {
 					artboardName = lname.(string)
 					artboardID = lid.(string)
 					layerPath += "/" + artboardName
 					actualPath =  GetPath(node)
+					if lclass != nil {
+						className = lclass.(string)
+					}
 				} else  {
 					layerName = lname.(string)
 					layerID = lid.(string)
 					layerPath += "/" + layerName
 					actualPath =  GetPath(node)
+					if lclass != nil {
+						className = lclass.(string)
+					}
 				}
 			}
 
@@ -505,7 +530,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 	diff := SketchLayerInfo{layerName, layerID,
 				artboardName, artboardID,
 				pageName, pageID,
-				actualPath, niceDescShort, niceDesc}
+				actualPath, className,niceDescShort, niceDesc}
 
 	return diff, srcact
 }

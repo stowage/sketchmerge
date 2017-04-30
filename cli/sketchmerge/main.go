@@ -21,7 +21,7 @@ func main() {
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
 		fmt.Printf("    sketchmerge diff [optional] <merge_file> <dst_file_or_dir> <src_file_or_dir> ...\n")
-		fmt.Printf("    sketchmerge merge -o <output dir> <merge_file> <dst_file_or_dir> <src_file_or_dir> ...\n")
+		fmt.Printf("    sketchmerge merge -o <output dir> <merge_file> [<merge_file2>] <dst_file_or_dir> <src_file_or_dir> ...\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Operations:\n")
 		fmt.Printf("	  diff - show difference of src and dst file\n")
@@ -33,6 +33,11 @@ func main() {
 		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are compared against baseline file")
 		fmt.Printf("	  --nice-description (-n) - analyze difference and provide natural language description\n")
 		fmt.Printf("	  (NOT IMPLEMENTED)--dependencies (-d) ARE ENABLED\n")
+		fmt.Printf("\n")
+		fmt.Printf("	Optional parameters for 'merge' operation:\n")
+		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge\n")
+		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are merged into baseline file")
+		fmt.Printf("	  		[<merge_file2>] should be also specified")
 		fmt.Printf("\n")
 		fmt.Printf("	Required parameters for 'merge' operations:\n")
 		fmt.Printf("	  --output=<path to dir> (-o <path to dir>) - output resulting sketch file to dir\n")
@@ -117,6 +122,7 @@ func main() {
 				if strings.HasPrefix(flag.Arg(argc), "--baseline=") {
 					baselineVersion = strings.TrimPrefix(flag.Arg(argc), "--baseline=")
 					is3WayMerge = true
+					isNice = true
 				} else if strings.HasPrefix(flag.Arg(argc), "--file-output=") {
 					outputToFile = strings.TrimPrefix(flag.Arg(argc), "--file-output=")
 				} else {
@@ -197,6 +203,8 @@ func main() {
 	if opType == MergeOpType {
 		files := make([]string,0)
 		outputToDir := ""
+		baselineVersion := ""
+		is3WayMerge := false
 		for argc := 1; argc < flag.NArg(); argc++ {
 			switch flag.Arg(argc) {
 
@@ -204,8 +212,16 @@ func main() {
 				argc++
 				outputToDir = flag.Arg(argc)
 				break
+			case "-b", "--baseline":
+				argc++
+				baselineVersion = flag.Arg(argc)
+				is3WayMerge = true
+				break
 			default:
-				if strings.HasPrefix(flag.Arg(argc), "--output=") {
+				if strings.HasPrefix(flag.Arg(argc), "--baseline=") {
+					baselineVersion = strings.TrimPrefix(flag.Arg(argc), "--baseline=")
+					is3WayMerge = true
+				} else if strings.HasPrefix(flag.Arg(argc), "--output=") {
 					outputToDir = strings.TrimPrefix(flag.Arg(argc), "--output=")
 				} else {
 					files = append(files, flag.Arg(argc))
@@ -214,8 +230,13 @@ func main() {
 
 		}
 
+		requiredFileCount := 3
 
-		if len(files) != 3 {
+		if is3WayMerge {
+			requiredFileCount := 4
+		}
+
+		if len(files) != requiredFileCount {
 			flag.Usage()
 			os.Exit(1)
 		}
@@ -234,11 +255,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		err := sketchmerge.ProcessFileMerge(files[0], files[1], files[2], outputToDir )
+		if !is3WayMerge {
+			err := sketchmerge.ProcessFileMerge(files[0], files[1], files[2], outputToDir)
 
-		if err!=nil {
-			fmt.Printf("Error occured: %v\n", err)
-			os.Exit(1)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			//TODO: Implement 3-way merge
 		}
 
 	}
