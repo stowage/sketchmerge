@@ -210,9 +210,9 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructu
 
 func ProcessNiceFileDiff3Way(sketchFileV0, sketchFileV1, sketchFileV2 string) (*FileStructureMerge, error) {
 
-	isBaseDir :=false
 	isSrcDir := false
 	isDstDir := false
+	isBaseDir :=false
 
 	sketchFileV0Info, errv0 := os.Stat(sketchFileV0)
 
@@ -389,6 +389,67 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 	return nil
 }
 
+//Performs 3-way merge
+func (mergeDoc * MergeDocuments) mergeChanges(srcFilePath string, dstFilePath string, fileName string, docDiffs map[string]interface{} , deleteActions, seqDiff map[string]string) error {
+
+	//Sorting diffs by deepness of item location
+	//this is required if we are adding subelemnts, because we can not add sub element without adding
+	//because we can not add sub element without adding parent
+	sortedActions := GetSortedDiffs(docDiffs, fileName)
+
+	for i := range sortedActions {
+
+		dep := sortedActions[i].(DependentObj)
+		key := dep.JsonPath
+		var item interface{} = dep.Ref
+
+		//if item is empty string its a delete operation
+		if item == "" {
+			deleteActions[key] = ""
+		} else if strings.HasPrefix(key, "^") {
+			seqDiff[key] = item.(string)
+		} else {
+			//Merge changes of values first
+			if err := mergeDoc.MergeByJSONPath(key, item.(string), DeleteMarked); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string) error {
+	//Perform all deletions
+	//First iteration will only mark to delete
+	for key, _ := range deleteActions {
+		if err := mergeDoc.MergeByJSONPath("", key, MarkElementToDelete); err != nil {
+			return err
+		}
+	}
+
+	//second iteration will delete
+	//TODO: optimize second call
+	for key, _ := range deleteActions {
+		if err := mergeDoc.MergeByJSONPath("", key, DeleteMarked); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (mergeDoc * MergeDocuments) mergeSequentions(objectKeyName string, seqDiff map[string]string) error {
+	//Perform sorting
+	for key, item := range seqDiff {
+		if err := mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func updateFile(workingDirV1, workingDirV2, fileKey string) {
 	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
 	baseFileName := path.Base(targetFileName)
@@ -487,6 +548,131 @@ func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileSt
 	return newMergeActions
 }
 
+func (fm * FileMerge) PerformMergeChanges(workingDirV0, workingDirV1 string, mergeMethod func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error ) error {
+
+	fileName := fm.FileKey + fm.FileExt
+
+	if !fm.IsDirectory && fm.Action == ADD {
+		updateFile(workingDirV1, workingDirV0, fileName)
+		return nil
+	}
+
+	if fm.FileDiff.Doc1Diffs == nil {
+		return nil
+	}
+
+	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileName
+	dstFilePath := workingDirV0 + string(os.PathSeparator) + fileName
+
+	//get files jsons
+	jsonDoc1, jsonDoc2, err := decodeMergeFiles(srcFilePath, dstFilePath)
+
+	if err != nil {
+		return err
+	}
+
+	//Create merge documets structure
+	mergeDoc := MergeDocuments{jsonDoc1, jsonDoc2}
+
+	if err := mergeMethod(srcFilePath, dstFilePath,
+		fileName,
+		fm, &mergeDoc); err!=nil {
+		return err
+	}
+
+	//Marshal result
+	data, err := json.Marshal(mergeDoc.DstDocument)
+
+	if err != nil {
+		return err
+	}
+
+	//to final sketch file
+	WriteToFile(dstFilePath, data)
+
+	return nil
+}
+
+func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON1, mergeJSON2 FileStructureMerge) error {
+
+
+	mergeActionsLocal := buildFileActions(workingDirV1, workingDirV0, mergeJSON1)
+	mergeActionsRemote := buildFileActions(workingDirV2, workingDirV0, mergeJSON2)
+
+	info1, _ := json.MarshalIndent(mergeActionsLocal, "", "  ")
+	fmt.Printf("local: %v\n", string(info1))
+
+	info2, _ := json.MarshalIndent(mergeActionsRemote, "", "  ")
+	fmt.Printf("remote: %v\n", string(info2))
+
+	//We will perform delete operations after isertions to avoid
+	//actions on the same index
+	deleteActions := make(map[string]string)
+
+	//All sequence changes should be performed after all changes
+	seqDiff1 := make(map[string]string)
+	seqDiff2 := make(map[string]string)
+
+	//Perform property change actions
+	for i := range mergeActionsLocal {
+
+		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			return mergeDoc.mergeChanges(srcFilePath, dstFilePath,
+				fileName,
+				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff1)
+		} ); err != nil {
+			return err
+		}
+
+	}
+
+	for i := range mergeActionsRemote {
+
+		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV2, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			return mergeDoc.mergeChanges(srcFilePath, dstFilePath,
+				fileName,
+				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff2)
+		}); err != nil {
+			return err
+		}
+
+	}
+
+	//Perform delete actions
+	for i := range mergeActionsLocal {
+
+		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			return mergeDoc.mergeDeletions(deleteActions)
+		} ); err != nil {
+			return err
+		}
+
+	}
+
+	//Perform sequence change actions
+	for i := range mergeActionsLocal {
+
+		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff1)
+		} ); err != nil {
+			return err
+		}
+
+	}
+
+	for i := range mergeActionsRemote {
+
+		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff2)
+		} ); err != nil {
+			return err
+		}
+
+	}
+
+	return nil
+}
+
 func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
 
 
@@ -519,6 +705,7 @@ func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStruct
 
 		if !mergeActions[i].IsDirectory && mergeActions[i].Action == ADD {
 			updateFile(workingDirV1, workingDirV2, fileName)
+			continue
 		}
 
 		if mergeActions[i].FileDiff.Doc1Diffs == nil {
@@ -615,4 +802,125 @@ func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 st
 	return nil
 
 }
+
+func Process3WayFileMerge(mergeFileName1, mergeFileName2 string, sketchFileV0, sketchFileV1, sketchFileV2 string, outputDir string) error {
+
+
+	isSrcDir := false
+	isDstDir := false
+	isBaseDir :=false
+
+	sketchFileV0Info, errv0 := os.Stat(sketchFileV0)
+
+	if errv0 != nil {
+		return errv0
+	}
+
+	isBaseDir = sketchFileV0Info.IsDir()
+
+	sketchFileV1Info, errv1 := os.Stat(sketchFileV1)
+
+	if errv1 != nil {
+		return errv1
+	}
+
+	isSrcDir = sketchFileV1Info.IsDir()
+
+	sketchFileV2Info, errv2 := os.Stat(sketchFileV2)
+
+	if errv2 != nil {
+		return errv2
+	}
+
+	isDstDir = sketchFileV2Info.IsDir()
+
+	workingDirV0, err0 := prepareWorkingDir(!isBaseDir)
+	if err0!=nil {
+		return err0
+	}
+	defer removeWorkingDir(workingDirV0, isBaseDir)
+
+	if isBaseDir {
+		workingDirV0 = sketchFileV0
+	}
+
+	workingDirV1, err1 := prepareWorkingDir(!isSrcDir)
+	if err1!=nil {
+		return err1
+	}
+	defer removeWorkingDir(workingDirV1, isSrcDir)
+
+	if isSrcDir {
+		workingDirV1 = sketchFileV1
+	}
+
+	workingDirV2, err2 := prepareWorkingDir(!isDstDir)
+	if  err2!=nil {
+		return err2
+	}
+	defer removeWorkingDir(workingDirV2, isDstDir)
+
+	if isDstDir {
+		workingDirV2 = sketchFileV2
+	}
+
+	if !isBaseDir {
+		if err := Unzip(sketchFileV0, workingDirV0); err != nil {
+			return err
+		}
+	}
+
+	if !isSrcDir {
+		if err := Unzip(sketchFileV1, workingDirV1); err != nil {
+			return err
+		}
+	}
+
+	if !isDstDir {
+		if err := Unzip(sketchFileV2, workingDirV2); err != nil {
+			return err
+		}
+	}
+
+	mergeFile1, err := ioutil.ReadFile(mergeFileName1)
+	if err != nil {
+		return err
+	}
+
+	var mergeJSON1 FileStructureMerge
+	var decoder1 = json.NewDecoder(bytes.NewReader(mergeFile1))
+	decoder1.UseNumber()
+
+	if err := decoder1.Decode(&mergeJSON1); err != nil {
+		return  err
+	}
+
+	mergeFile2, err := ioutil.ReadFile(mergeFileName2)
+	if err != nil {
+		return err
+	}
+
+	var mergeJSON2 FileStructureMerge
+	var decoder2 = json.NewDecoder(bytes.NewReader(mergeFile2))
+	decoder2.UseNumber()
+
+	if err := decoder2.Decode(&mergeJSON2); err != nil {
+		return  err
+	}
+
+	if err := mergeActions3Way(workingDirV0, workingDirV1, workingDirV2, mergeJSON1, mergeJSON2); err != nil  {
+		return err
+	}
+
+	if !isBaseDir {
+		sketchFile := outputDir + string(os.PathSeparator) + strings.TrimPrefix(sketchFileV0, filepath.Dir(sketchFileV0))
+		//similar to zip -y -r -q -8 testVCS2.sketch ./pages/ ./previews/ document.json meta.json user.json
+		Zipit(workingDirV0, sketchFile)
+	}
+
+	return nil
+
+}
+
+
 

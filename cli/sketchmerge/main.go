@@ -233,7 +233,7 @@ func main() {
 		requiredFileCount := 3
 
 		if is3WayMerge {
-			requiredFileCount := 4
+			requiredFileCount = 4
 		}
 
 		if len(files) != requiredFileCount {
@@ -263,7 +263,11 @@ func main() {
 				os.Exit(1)
 			}
 		} else {
-			//TODO: Implement 3-way merge
+			err := sketchmerge.Process3WayFileMerge(files[0], files[1], baselineVersion, files[2], files[3], outputToDir)
+			if err != nil {
+				fmt.Printf("Error occured: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 	}

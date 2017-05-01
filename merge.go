@@ -1032,6 +1032,26 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	return nil
 }
 
+func decodeMergeFile(doc1File string) (map[string]interface{}, error) {
+
+	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)
+	if eDoc1 != nil {
+		return nil, eDoc1
+	}
+
+
+	var result1 map[string]interface{}
+	var decoder1 = json.NewDecoder(bytes.NewReader(fileDoc1))
+	decoder1.UseNumber()
+
+	if err := decoder1.Decode(&result1); err != nil {
+		return nil, err
+	}
+
+
+	return result1, nil
+}
+
 func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}, error) {
 
 	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)

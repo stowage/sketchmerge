@@ -213,8 +213,14 @@ func TestJsonStructureCompare_Compare(t *testing.T) {
 	jsCompare := NewJsonStructureCompare()
 	jsCompare.Compare(jsonDoc1, jsonDoc2, "$")
 
-	jsCompare.Doc1Diffs = ProduceNiceDiff(MERGE, "test.json", jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath, nil)
-	jsCompare.Doc2Diffs = ProduceNiceDiff(MERGE,"test.json", jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath, nil)
+	skDiff1 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+	skDiff1.ProduceNiceDiff("local", MERGE, "test.json", jsonDoc1, jsonDoc2, jsCompare.Doc1Diffs, jsCompare.DepDoc1.DepPath, jsCompare.DepDoc2.DepPath)
+
+	skDiff2 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+	skDiff2.ProduceNiceDiff("local", MERGE,"test.json", jsonDoc2, jsonDoc1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath)
+
+	jsCompare.Doc1Diffs = map[string]interface{} {"nice_diff" : skDiff1}
+	jsCompare.Doc2Diffs = map[string]interface{} {"nice_diff" : skDiff2}
 
 	//jsCompare.Doc1SeqDiffs = ProduceNiceDiff(jsonDoc1, jsonDoc2, jsCompare.Doc1SeqDiffs, true)
 	//jsCompare.Doc2SeqDiffs = ProduceNiceDiff(jsonDoc2, jsonDoc1, jsCompare.Doc2SeqDiffs, true)
