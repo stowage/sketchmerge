@@ -312,6 +312,20 @@ func GetPath(n Node) string {
 	return path
 }
 
+
+
+func GetFullPath(n Node) string {
+	var path string
+	for n != nil  {
+		path = path + n.GetCurrentPath()
+		n = n.GetNext()
+	}
+	if path == "" {
+		path = "$"
+	}
+	return path
+}
+
 func getActionWithoutReverse(s string) string {
 	if s == "" {
 		return ""
@@ -663,6 +677,7 @@ func (md * MergeDocuments) deleteArrayElement(dstNode Node) error {
 
 //Delete an element from sequence array
 func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
+
 	_, lastDstNode, err := dstNode.Apply(md.DstDocument)
 
 	if err != nil {

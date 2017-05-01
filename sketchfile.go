@@ -432,7 +432,7 @@ func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string)
 	//TODO: optimize second call
 	for key, _ := range deleteActions {
 		if err := mergeDoc.MergeByJSONPath("", key, DeleteMarked); err != nil {
-			return err
+			continue
 		}
 	}
 
@@ -607,19 +607,23 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 
 	//We will perform delete operations after isertions to avoid
 	//actions on the same index
-	deleteActions := make(map[string]string)
+	deleteMerges := make(map[string]interface{})
+	seqMerges1 := make(map[string]interface{})
+	seqMerges2 := make(map[string]interface{})
 
-	//All sequence changes should be performed after all changes
-	seqDiff1 := make(map[string]string)
-	seqDiff2 := make(map[string]string)
 
 	//Perform property change actions
 	for i := range mergeActionsLocal {
 
 		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			return mergeDoc.mergeChanges(srcFilePath, dstFilePath,
+			seqDiff := make(map[string]string)
+			deleteActions := make(map[string]string)
+			_err := mergeDoc.mergeChanges(srcFilePath, dstFilePath,
 				fileName,
-				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff1)
+				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff)
+			deleteMerges[fileName] = deleteActions
+			seqMerges1[fileName] = seqDiff
+			return _err
 		} ); err != nil {
 			return err
 		}
@@ -629,9 +633,19 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsRemote {
 
 		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV2, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			return mergeDoc.mergeChanges(srcFilePath, dstFilePath,
+			deleteActions :=  deleteMerges[fileName]
+			if deleteActions == nil {
+				deleteActions = make(map[string]string)
+			}
+
+			seqDiff := make(map[string]string)
+
+			_err := mergeDoc.mergeChanges(srcFilePath, dstFilePath,
 				fileName,
-				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff2)
+				fm.FileDiff.Doc1Diffs, deleteActions.(map[string]string), seqDiff)
+			deleteMerges[fileName] = deleteActions
+			seqMerges2[fileName] = seqDiff
+			return _err
 		}); err != nil {
 			return err
 		}
@@ -642,7 +656,11 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsLocal {
 
 		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			return mergeDoc.mergeDeletions(deleteActions)
+			deleteActions :=  deleteMerges[fileName]
+			if deleteActions == nil {
+				return nil
+			}
+			return mergeDoc.mergeDeletions(deleteActions.(map[string]string))
 		} ); err != nil {
 			return err
 		}
@@ -653,7 +671,11 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsLocal {
 
 		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff1)
+			seqDiff := seqMerges1[fileName]
+			if seqDiff == nil {
+				return nil
+			}
+			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff.(map[string]string))
 		} ); err != nil {
 			return err
 		}
@@ -663,7 +685,11 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsRemote {
 
 		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff2)
+			seqDiff := seqMerges2[fileName]
+			if seqDiff == nil {
+				return nil
+			}
+			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff.(map[string]string))
 		} ); err != nil {
 			return err
 		}
