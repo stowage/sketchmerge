@@ -1,3 +1,6 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
+// This module contains functions helping to find dependencies
+
 package sketchmerge
 
 import (

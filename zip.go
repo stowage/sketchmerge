@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"archive/zip"
+	"time"
 	_"github.com/klauspost/compress/flate"
 	_"github.com/klauspost/compress/zip"
 )
 
 func Zipit(source, target string) error {
+	defer TimeTrack(time.Now(), "Zipit " + target)
 	zipfile, err := os.Create(target)
 	if err != nil {
 		return err

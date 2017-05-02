@@ -1,3 +1,20 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
+// This module contains functions needed to compare json trees mainly for Sketch App
+// The main idea is to traverse both trees and build json paths for each tree
+// We also take into account changes in array order
+// This is not a regular jsonpath, but json paths queries with extensies
+// Regular jsonpath:
+// 	$["layers"][1] - addresses an element in array
+//	$["layers"][1]["frame"] - addresses property
+// Json Path with actions:
+//	^$["layers"] - tells that sequence of array has changed
+//	+$["layers"][3] - tells that layer at index 3 should be added
+//	-$["layers"][4] - tells that layer at index 4 should be deleted
+//	~pages/9E4C0CBB-05E4-4D6D-9B75-A8A3ACB36CBB.json~$["layers"][0] - refers to first layer in file pages/9E4C0CBB-05E4-4D6D-9B75-A8A3ACB36CBB.json
+//	A~pages/9E4C0CBB-05E4-4D6D-9B75-A8A3ACB36CBB.json~$ - tells that file has to be copied from source to destination
+//	D~pages/9E4C0CBB-05E4-4D6D-9B75-A8A3ACB36CBB.json~$ - tells that file has to be deleted
+//	R+$["layers"][3] - this is reverse action, it tells that layer at index 3 should be deleted (R prefix means reverse action)
+
 package sketchmerge
 
 
@@ -25,8 +42,8 @@ type SketchFileStruct struct {
 	fileSet map[string] interface{}
 	name string
 }
-type IVoid interface {}
 
+//Sketch layer information
 type SketchLayerInfo struct {
 	LayerName string
 	LayerID string
@@ -40,16 +57,19 @@ type SketchLayerInfo struct {
 	NiceDescription string
 }
 
+//Unique id for sketch layer
 func (li * SketchLayerInfo) fingerprint(solt string) string {
 	return li.LayerID + "/" + li.ArtboardID + "/" + li.PageID + "/" + solt
 }
 
+//Interface for setting up/grouping differences
 type Difference interface {
 	SetDiff(action ApplyAction, actualPath, src , dst, name, className, loc string) DiffObject
 	SetCollision(oid string)
 	GetDiff() map[string]interface{}
 }
 
+//Main object describing differencies, Changes field contains jsonpaths
 type DiffObject struct {
 
 	Description map[string]interface{} `json:"description,omitempty"`
@@ -57,6 +77,7 @@ type DiffObject struct {
 
 }
 
+//Parent structure for all type of differencies
 type MainDiff struct {
 	DiffInfo map[string]interface{} `json:"info,omitempty"`
 	Diff map[string]interface{} `json:"diff,omitempty"`
@@ -64,36 +85,43 @@ type MainDiff struct {
 
 }
 
+//Sketch layer differencies
 type SketchLayerDiff struct {
 	Name string `json:"name,omitempty"`
 	MainDiff
 }
 
+//Artboard differencies
 type SketchArtboardDiff struct {
 	Name string `json:"name,omitempty"`
 	LayerDiff map[string]interface{} `json:"layer_diff,omitempty"`
 	MainDiff
 }
 
+//Page differencies
 type SketchPageDiff struct {
 	Name string `json:"name,omitempty"`
 	ArtboardDiff map[string]interface{} `json:"artboard_diff,omitempty"`
 	MainDiff
 }
 
+//Sketch document differencies
 type SketchDiff struct {
 	PageDiff map[string]interface{} `json:"page_diff,omitempty"`
 	MainDiff
 }
 
+//Resturns differences structure
 func (sd* MainDiff) GetDiff() map[string]interface{}  {
 	return sd.Diff
 }
 
+//Set reference collision object id (not used)
 func (sd* MainDiff) SetCollision(oid string) {
 	sd.DiffInfo["CollisionID"] = oid
 }
 
+//Set difference info for given layer, artboard or page
 func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, className, loc string) DiffObject  {
 
 	strAction := ""
@@ -182,7 +210,6 @@ type FileStructureMerge struct {
 	MergeActions []FileMerge `json:"merge_actions"`
 }
 
-
 //Difference of two json documents in jsonpath notations
 type JsonStructureCompare struct {
 	//differences for doc1 vs doc2 in jsonpath request
@@ -208,6 +235,8 @@ type JsonStructureCompare struct {
 
 }
 
+//Performs comparison of two json files
+//doc1File, doc2File are paths
 func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error) {
 
 	jsCompare := NewJsonStructureCompare()
@@ -241,8 +270,6 @@ func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error
 
 
 	jsCompare.Compare(result1, result2, "$")
-
-
 
 	return jsCompare, nil
 }
@@ -354,6 +381,7 @@ func ExtractSketchDirStruct(baseDir string, newDir string) (SketchFileStruct, Sk
 }
 
 //Creates file structure changes description
+//Compares to file sets from two folders
 func (fs*FileStructureMerge) FileSetChange(baseSet SketchFileStruct, newSet SketchFileStruct)  {
 	for key, item := range baseSet.fileSet {
 		mergeAction := new(FileMerge)
@@ -383,14 +411,17 @@ func (fs*FileStructureMerge) FileSetChange(baseSet SketchFileStruct, newSet Sket
 	}
 }
 
+//Performs dependencies analysis
 func (fsMerge * FileStructureMerge) ProduceDiffWithDependencies() error {
 	for i := range fsMerge.MergeActions {
 		fileName := fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt
+		//Go thru all differences
 		for key, _ := range fsMerge.MergeActions[i].FileDiff.Doc1Diffs {
 			matchingDiffs := make(map[string]interface{})
-
+			//find dependent jsonpaths
 			FindMatchingDiffs(SOURCE, fileName, key, fsMerge.MergeActions[i].FileDiff.DepDoc1.DepPath, fsMerge.MergeActions[i].FileDiff.DepDoc2.DepPath, matchingDiffs)
 
+			//Add them to actions
 			for mKey, mItem := range matchingDiffs {
 				fsMerge.MergeActions[i].FileDiff.Doc1Diffs[mKey] = mItem
 			}
@@ -401,7 +432,7 @@ func (fsMerge * FileStructureMerge) ProduceDiffWithDependencies() error {
 		}
 		fileAction := fsMerge.MergeActions[i].Action
 
-
+		//We need specific workaround for adding or removing pages
 		if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
 			if fileAction == ADD || fileAction == DELETE {
 				fileActionPath := BuildFileAction(fileAction, fileName)
@@ -416,6 +447,7 @@ func (fsMerge * FileStructureMerge) ProduceDiffWithDependencies() error {
 
 }
 
+//Find most actual object representing given layer
 func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key string) (SketchLayerInfo, ApplyAction) {
 	var pageID = ""
 	var pageName = ""
@@ -535,7 +567,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 	return diff, srcact
 }
 
-
+//There some dependencies in meta.json file which we have to omit
 func isPageActionToOmit (fileName, key string) bool {
 	if strings.Contains(key, "~meta.json~") {
 		return false
@@ -593,6 +625,8 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 
 }
 
+//This function is used in order to organize jsonpaths in "local" and "remote" groups
+//because it allows to store SketchDiff outside
 func (fm * FileMerge) NiceDifference(loc string, workingDirV1, workingDirV2 string, skDiff1 SketchDiff, skDiff2 SketchDiff) error {
 	doc1File := workingDirV1 + string(os.PathSeparator) + fm.FileKey + fm.FileExt
 	doc2File := workingDirV2 + string(os.PathSeparator) + fm.FileKey + fm.FileExt
@@ -641,6 +675,8 @@ func (fm * FileMerge) NiceDifference(loc string, workingDirV1, workingDirV2 stri
 	return nil
 }
 
+//This function groups differences in local and remote groups
+//local, remote changes/jsopaths allows to apply changes from different sources
 func ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2 string, fsMerge1 * FileStructureMerge, fsMerge2 * FileStructureMerge) (*FileStructureMerge,error) {
 	fmMap := make(map[string]FileMerge)
 	sk1Map := make(map[string]interface{})
@@ -717,7 +753,7 @@ func ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2 string, 
 	return &fsMerge, nil
 }
 
-
+//This function is used for two way merge
 func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(loc string, workingDirV1, workingDirV2 string) error {
 	for i := range fsMerge.MergeActions {
 		if filepath.Ext(strings.ToLower(fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt)) == ".json" {
@@ -784,6 +820,7 @@ func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(loc string, 
 	//return json.MarshalIndent(fsMerge, "", "  ")
 }
 
+//Compares two Sketch documents
 func (fsMerge * FileStructureMerge) CompareDocuments(workingDirV1, workingDirV2 string) error {
 	for i := range fsMerge.MergeActions {
 		fileName := fsMerge.MergeActions[i].FileKey + fsMerge.MergeActions[i].FileExt
@@ -828,6 +865,7 @@ func (jsc * JsonStructureCompare) traverseDependentObjects(objKey string, docTre
 	return true
 }
 
+//Adds dependencies to given objKey
 func (jsc * JsonStructureCompare) AddDependentObjects(objKey string, docTree * interface{}, dep * DependentObjects, jsonpath string) {
 	if !!jsc.traverseDependentObjects(objKey, docTree, dep, jsonpath) {
 
@@ -859,14 +897,14 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 		if subtree, ok := doc2TreeMap[key]; ok {
 			//if it has a difference append to difference map
 			if __jsonpath1, __jsonpath2 ,ok := jsc.CompareDocuments(&item, &subtree, pathDoc1  + `["` + key + `"]`, pathDoc2  + `["` + key + `"]`); !ok {
-				jsc.AddDoc1Diff(__jsonpath1, __jsonpath2, "CompareProperties")
+				jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareProperties")
 				jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareProperties")
 				hasDiff = true
 			}
 		} else {
 
 			jsc.addDoc2Diff("-" + pathDoc1 + `["` + key + `"]`,"", "CompareProperties")
-			jsc.AddDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
+			jsc.addDoc1Diff("+" + pathDoc1 + `["` + key + `"]`, pathDoc2, "CompareProperties")
 			hasDiff = true
 		}
 
@@ -886,7 +924,7 @@ func (jsc * JsonStructureCompare) CompareProperties(doc1TreeMap map[string]inter
 	//collect only properties not doc1
 	for key, _:= range doc2TreeMap {
 		if _, ok := doc1TreeMap[key]; !ok {
-			jsc.AddDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
+			jsc.addDoc1Diff("-" + pathDoc2 + `["` + key + `"]`,"","CompareProperties")
 			jsc.addDoc2Diff("+" + pathDoc2 + `["` + key + `"]`, pathDoc1, "CompareProperties")
 			hasDiff = true
 		}
@@ -999,13 +1037,12 @@ func CompareSequence(objectKeyName string, doc1TreeArray []interface{}, doc2Tree
 		//log.Println("doc2Changes:" + strconv.Itoa(len(keysDoc2)) +":" + strconv.Itoa(idxDoc2) +":"+ strconv.Itoa(doc2Changes[idxDoc2]) )
 	}
 
-	log.Printf(" key1: %v , %v\nkey2: %v , %v\n", keysDoc1,doc1Changes, keysDoc2,  doc2Changes)
+	//log.Printf(" key1: %v , %v\nkey2: %v , %v\n", keysDoc1,doc1Changes, keysDoc2,  doc2Changes)
 
 	return doc1Changes, doc2Changes
 }
 
-
-func (jsc * JsonStructureCompare) AddDoc1Diff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
+func (jsc * JsonStructureCompare) addDoc1Diff(jsonpathDoc1 string, jsonpathDoc2 interface{}, from string) {
 	//log.Printf("doc1Diff: %v %v %v\n", from, jsonpathDoc1, jsonpathDoc2)
 	jsc.Doc1Diffs[jsonpathDoc1] = jsonpathDoc2
 }
@@ -1051,7 +1088,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 	doc1ChangesCopy := deepcopy.Copy(doc1Changes).(map[int]int)
 	doc2ChangesCopy := deepcopy.Copy(doc2Changes).(map[int]int)
-	fmt.Printf("docChanges: %v , %v\n", doc1Changes, doc2Changes)
+	//fmt.Printf("docChanges: %v , %v\n", doc1Changes, doc2Changes)
 
 
 	//go thru array associations with the same objectKeyName for doc1
@@ -1067,11 +1104,11 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 			//if there is no such element in doc2 array
 			jsc.addDoc2Diff("-" + jsonpathDoc1, "","CompareSlices")
-			jsc.AddDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
+			jsc.addDoc1Diff("+" + jsonpathDoc1, pathDoc2, "CompareSlices")
 			jsc.DepDoc2.AddDependentPath( "-" + jsonpathDoc1, "^" + pathDoc1, "^" + pathDoc2)
 			jsc.AddDependentObjects("", &(doc1TreeArray[idxDoc1]), jsc.DepDoc1, jsonpathDoc1)
 		} else if __jsonpath1, __jsonpath2, ok := jsc.CompareDocuments(&(doc1TreeArray[idxDoc1]), &(doc2TreeArray[idxDoc2]), jsonpathDoc1, jsonpathDoc2); !ok {
-			jsc.AddDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
+			jsc.addDoc1Diff(__jsonpath1, __jsonpath2, "CompareSlices")
 			jsc.addDoc2Diff(__jsonpath2, __jsonpath1, "CompareSlices")
 		}
 	}
@@ -1090,7 +1127,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 		if idxDoc1 == -1 {
 
 			//if there is no such element in doc1 array
-			jsc.AddDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
+			jsc.addDoc1Diff("-" + jsonpathDoc2, "", "CompareSlices")
 			jsc.addDoc2Diff("+" + jsonpathDoc2, pathDoc1, "CompareSlices")
 			jsc.DepDoc1.AddDependentPath("-" + jsonpathDoc2, "^" + pathDoc2, "^" + pathDoc1)
 			jsc.AddDependentObjects("", &(doc2TreeArray[idxDoc2]), jsc.DepDoc2, jsonpathDoc2)
@@ -1101,7 +1138,7 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 	//if it's not a layers array compare it property by property
 	if len(doc1Changes) == 0 && len(doc2Changes) == 0 {
 		if !reflect.DeepEqual(doc1TreeArray, doc2TreeArray) {
-			jsc.AddDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
+			jsc.addDoc1Diff(pathDoc1, pathDoc2, "CompareSlices")
 			jsc.addDoc2Diff(pathDoc2, pathDoc1, "CompareSlices")
 
 			for idxDoc1 := range doc1TreeArray {
@@ -1229,9 +1266,9 @@ func (jsc * JsonStructureCompare) FileDependendObject(fileAction FileActionType,
 		//jsc.AddDoc1Diff(fileActionPath, fileActionPath)
 		//
 		if fileAction == ADD {
-			jsc.AddDoc1Diff("$", "$", "FileDependendObject")
+			jsc.addDoc1Diff("$", "$", "FileDependendObject")
 		} else if fileAction == DELETE {
-			jsc.AddDoc1Diff("-$", "", "FileDependendObject")
+			jsc.addDoc1Diff("-$", "", "FileDependendObject")
 		}
 	} else if docType == DESTINATION {
 		jsc.DepDoc2.DepObj[strings.TrimPrefix(fileKey, "pages + string(os.PathSeparator)")] = dep

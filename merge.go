@@ -1,3 +1,5 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
+// This is parser and interpreteur of json paths
 package sketchmerge
 
 import (
@@ -296,10 +298,12 @@ func normalize(s string) string {
 	return r
 }
 
+//Calculate path deepness
 func PathLength(s string) int {
 	return strings.Count(s, "][")
 }
 
+//Returns jsonpath string from current node to root
 func GetPath(n Node) string {
 	var path string
 	for n != nil  {
@@ -313,7 +317,7 @@ func GetPath(n Node) string {
 }
 
 
-
+//Return full path from root node as jsonpath string
 func GetFullPath(n Node) string {
 	var path string
 	for n != nil  {
@@ -464,7 +468,6 @@ func FlatJsonPath(s string, omitActions bool) string {
 
 	for len(s) > 0 {
 
-
 		// Grab the bracketed entries
 		for len(s) > 0 && s[0] == '[' {
 			n := strings.Index(s, "]")
@@ -572,6 +575,7 @@ func Parse(s string) (Node, ApplyAction, error) {
 	return &rt, action, nil
 }
 
+//sets array element from source do destination
 func (md * MergeDocuments) setArrayElement(srcNode Node, dstNode Node) error {
 
 
@@ -1051,6 +1055,7 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	return nil
 }
 
+//Function extract json from merge file
 func decodeMergeFile(doc1File string) (map[string]interface{}, error) {
 
 	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)
@@ -1071,6 +1076,7 @@ func decodeMergeFile(doc1File string) (map[string]interface{}, error) {
 	return result1, nil
 }
 
+//Function extract jsons from merge files
 func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}, error) {
 
 	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)
@@ -1102,6 +1108,10 @@ func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{},
 	return result1, result2, nil
 }
 
+//We should sort differences ascending for propery changes
+//+$["layers"][2]	-	$["layers"][2]["frame"]
+//you need to add $["layers"][2] first
+//This function performs sorting of differencies
 func GetSortedDiffs(docDiffs map[string]interface{}, fileName string) []interface{} {
 	sortedActions := make([]interface{}, len(docDiffs))
 
@@ -1133,6 +1143,57 @@ func GetSortedDiffs(docDiffs map[string]interface{}, fileName string) []interfac
 	return sortedActions
 }
 
+//We should sort actions for sequence changes descending,
+//because in you reorde parent elements you cant tell where is the sequence
+//inside the sequence
+//^$["layers"][2][layers]	-	^$["layers"][2][layers][0]["layers"]
+//so you should sort ^$["layers"][2][layers][0]["layers"] first
+func GetSortedDescActions(actions map[string]string) ([]string, []string) {
+	sortedActionsKey := make([]string, len(actions))
+	sortedActionsItem := make([]string, len(actions))
+
+	k := 0
+
+	for key, item := range actions {
+		newKey := key
+		newItem := key
+
+		if k == 0 {
+			sortedActionsKey[0] = newKey
+			sortedActionsItem[0] = newItem
+		} else {
+			for i := k; i > 0; i-- {
+
+				currKey := sortedActionsKey[i - 1]
+				currItem := sortedActionsItem[i - 1]
+
+				if PathLength(key) > PathLength(currKey) {
+					sortedActionsKey[i - 1] = key
+					sortedActionsKey[i] = currKey
+
+					sortedActionsItem[i - 1] = item
+					sortedActionsItem[i] = currItem
+				} else {
+					sortedActionsKey[i] = newKey
+					sortedActionsItem[i] = newItem
+					break
+				}
+
+			}
+		}
+		k++
+	}
+
+	return sortedActionsKey, sortedActionsItem
+}
+
+//It's very important to sort delete actions descending
+//because deleting an element inside an other element will cause
+//an error because this index will not be available
+//^$["layers"][2][layers]	-	^$["layers"][2][layers][0]["layers"]
+//so you should delete ^$["layers"][2][layers][0]["layers"] first
+//because $["layers"][2][layers][0] may appear on other place
+//This function performs sorting
 func GetSortedDescDelActions(deleteActions map[string]string) []string {
 	sortedActions := make([]string, len(deleteActions))
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	_"io"
 	"fmt"
-	_"time"
+	"time"
 	"path"
 )
 
@@ -63,6 +63,7 @@ func WriteToFile(path string, data []byte) error {
 }
 
 
+//2-way diff
 func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMerge, error) {
 
 	isSrcDir := false
@@ -136,7 +137,9 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMe
 
 }
 
+//2-way file difference
 func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMerge, error) {
+	defer TimeTrack(time.Now(), "ProcessNiceFileDiff " + sketchFileV1)
 
 	isSrcDir := false
 	isDstDir := false
@@ -208,7 +211,9 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructu
 
 }
 
+//#-way file difference
 func ProcessNiceFileDiff3Way(sketchFileV0, sketchFileV1, sketchFileV2 string) (*FileStructureMerge, error) {
+	defer TimeTrack(time.Now(), "ProcessNiceFileDiff3Way " + sketchFileV0)
 
 	isSrcDir := false
 	isDstDir := false
@@ -367,16 +372,18 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 		mergeDoc.MergeByJSONPath("", delActionsArr[i], MarkElementToDelete) //
 	}
 
+	seqDiffKeyArr, seqDiffItemArr := GetSortedDescActions(seqDiff)
+	//Perform sorting
+	//for key, item := range seqDiff {
+	for i:= range seqDiffKeyArr {
+		mergeDoc.MergeSequenceByJSONPath(objectKeyName, seqDiffKeyArr[i], seqDiffItemArr[i])
+	}
+
 	//second iteration will delete
 	//TODO: optimize second call
 	//for key, _ := range deleteActions {
 	for i:= range delActionsArr {
 		mergeDoc.MergeByJSONPath("", delActionsArr[i], DeleteMarked)
-	}
-
-	//Perform sorting
-	for key, item := range seqDiff {
-		mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item)
 	}
 
 	//Marshal result
@@ -422,6 +429,7 @@ func (mergeDoc * MergeDocuments) mergeChanges(srcFilePath string, dstFilePath st
 	return nil
 }
 
+//That function will only set value of an element in a sequence to nil
 func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string) error {
 	//Perform all deletions
 	//First iteration will only mark to delete
@@ -433,6 +441,12 @@ func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string)
 		}
 	}
 
+	return nil
+}
+
+//This will perform deletion of elements which ara nil
+func (mergeDoc * MergeDocuments) mergeConfirmDeletions(deleteActions map[string]string) error {
+	delActionsArr := GetSortedDescDelActions(deleteActions)
 	//second iteration will delete
 	//TODO: optimize second call
 	//for key, _ := range deleteActions {
@@ -445,10 +459,13 @@ func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string)
 	return nil
 }
 
+//Reorder sequences in destination document so it will close to source sequence
 func (mergeDoc * MergeDocuments) mergeSequentions(objectKeyName string, seqDiff map[string]string) error {
+	seqDiffKeyArr, seqDiffItemArr := GetSortedDescActions(seqDiff)
 	//Perform sorting
-	for key, item := range seqDiff {
-		if err := mergeDoc.MergeSequenceByJSONPath(objectKeyName, key, item); err != nil {
+	//for key, item := range seqDiff {
+	for i:= range seqDiffKeyArr {
+		if err := mergeDoc.MergeSequenceByJSONPath(objectKeyName, seqDiffKeyArr[i], seqDiffItemArr[i]); err != nil {
 			return err
 		}
 	}
@@ -456,6 +473,7 @@ func (mergeDoc * MergeDocuments) mergeSequentions(objectKeyName string, seqDiff 
 	return nil
 }
 
+//This functions overwrites file
 func updateFile(workingDirV1, workingDirV2, fileKey string) {
 	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
 	baseFileName := path.Base(targetFileName)
@@ -474,6 +492,7 @@ func updateFile(workingDirV1, workingDirV2, fileKey string) {
 	CopyFile(workingDirV1 + string(os.PathSeparator) + fileKey, targetFileName)
 }
 
+//Create FileMerge structure for given action
 func createMergeAction(fileKey, fileAction string) FileMerge {
 
 	fileExt := filepath.Ext(fileKey)
@@ -490,18 +509,23 @@ func createMergeAction(fileKey, fileAction string) FileMerge {
 	return mergeAction
 }
 
-
+//Converts jsopaths with file references to plain mergeActions structures per file
+//this is required to process dependencies
 func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) ([]FileMerge) {
 
+	//New merge actions array
 	newMergeActions := make([]FileMerge, 0)
 
+	//We will use maps in order to group jsonpaths per file
 	mergeMap := make(map[string]interface{})
 
+	//go thru all merge actions (usually pages)
 	for i := range mergeJSON.MergeActions {
 
-
+		//Go thru all go diffs
 		for key, item := range mergeJSON.MergeActions[i].FileDiff.Doc1Diffs {
 
+			//TODO: Implement reverse actions
 			if strings.HasPrefix(key, "R") {
 				//newKey, newItem := ReversAction( key, item.(string))
 				//
@@ -515,15 +539,20 @@ func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileSt
 			}
 
 			fileName := mergeJSON.MergeActions[i].FileKey + mergeJSON.MergeActions[i].FileExt
+			//Extract only file name
 			fileKey := ReadFileKey(key)
+			//Extract file name with action 'A' add or 'D' delete
 			fileAction := ReadFileAction(key)
 
-			//fmt.Println("key: " + fileName + " " + fileKey)
+			//if we have file name in jsonpath use it as key
+			//that means that given jsonpath belons to other file
+			//so we should put it into other merge action structure
 			if fileKey != "" {
 				fileName = fileKey
 			}
 
-
+			//Find marge action for given fileName
+			//and create new FileMerge if there is no such value in the map
 			fileMerge, ok := mergeMap[fileName].(FileMerge)
 			if !ok {
 
@@ -533,6 +562,7 @@ func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileSt
 
 			}
 
+			//Determine first letter of action
 			if strings.HasPrefix(key,"A") {
 				fileMerge.Action = ADD
 				mergeMap[fileName] = fileMerge
@@ -541,12 +571,14 @@ func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileSt
 				mergeMap[fileName] = fileMerge
 			}
 
+			//remove all file references and set as normal json
 			fileMerge.FileDiff.Doc1Diffs[FlatJsonPath(key, false)] = FlatJsonPath(item.(string), false)
 		}
 
 
 	}
 
+	//add all values into array
 	for _, value := range mergeMap {
 		newMergeActions = append(newMergeActions, value.(FileMerge))
 	}
@@ -702,11 +734,26 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 
 	}
 
+	//Perform confirm delete actions
+	for i := range mergeActionsLocal {
+
+		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			deleteActions :=  deleteMerges[fileName]
+			if deleteActions == nil {
+				return nil
+			}
+			return mergeDoc.mergeConfirmDeletions(deleteActions.(map[string]string))
+		} ); err != nil {
+			return err
+		}
+
+	}
+
 	return nil
 }
 
 func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
-
+	defer TimeTrack(time.Now(), "mergeActions " + workingDirV1)
 
 	mergeActions := buildFileActions(workingDirV1, workingDirV2, mergeJSON)
 
@@ -756,6 +803,7 @@ func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStruct
 }
 
 func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string) error {
+	defer TimeTrack(time.Now(), "ProcessFileMerge " + sketchFileV1)
 
 	isSrcDir := false
 	isDstDir := false
@@ -836,7 +884,7 @@ func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 st
 }
 
 func Process3WayFileMerge(mergeFileName1, mergeFileName2 string, sketchFileV0, sketchFileV1, sketchFileV2 string, outputDir string) error {
-
+	defer TimeTrack(time.Now(), "Process3WayFileMerge " + sketchFileV0)
 
 	isSrcDir := false
 	isDstDir := false

@@ -7,9 +7,12 @@ import (
 	"io"
 	_"strings"
 	_"fmt"
+	"time"
 )
 
 func Unzip(src, dest string) error {
+	defer TimeTrack(time.Now(), "Unzip " + src)
+
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
