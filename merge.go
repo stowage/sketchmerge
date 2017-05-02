@@ -726,6 +726,7 @@ func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
 	finArr = compactSlice(finArr)
 
 	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
+	//log.Printf("finArr: %v\n", finArr)
 	return nil
 }
 
@@ -763,9 +764,11 @@ func (md * MergeDocuments) markToDelArrayElement(dstNode Node) error {
 		return finerr
 	}
 
+
 	index := lastDstNode.GetKey().(int)
 	finArr := fordst.([]interface{})
 	finArr[index] = nil
+
 	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
 	return nil
 }
@@ -933,6 +936,7 @@ func compactSlice(newslice []interface{}) []interface{} {
 			k++
 		}
 	}
+
 	return newslice[:k]
 }
 
@@ -1129,4 +1133,34 @@ func GetSortedDiffs(docDiffs map[string]interface{}, fileName string) []interfac
 	return sortedActions
 }
 
+func GetSortedDescDelActions(deleteActions map[string]string) []string {
+	sortedActions := make([]string, len(deleteActions))
+
+	k := 0
+
+	for key, _ := range deleteActions {
+		newDel := key
+
+		if k == 0 {
+			sortedActions[0] = newDel
+		} else {
+			for i := k; i > 0; i-- {
+
+				del := sortedActions[i - 1]
+
+				if PathLength(key) > PathLength(del) {
+					sortedActions[i - 1] = key
+					sortedActions[i] = del
+				} else {
+					sortedActions[i] = newDel
+					break
+				}
+
+			}
+		}
+		k++
+	}
+
+	return sortedActions
+}
 

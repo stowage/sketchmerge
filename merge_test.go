@@ -264,3 +264,36 @@ func TestGetSortedDiffs(t *testing.T) {
 	}
 
 }
+
+func TestGetSortedDescDelActions(t *testing.T) {
+	diffs := make(map[string]string)
+
+	diffs[`$["layers"][2]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][3]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][4]["frame"][10]`] = ""
+	diffs[`$["layers"][5]["frame"]["x"]`] = ""
+	diffs[`$["layers"][6]["frame"]`] = ""
+	diffs[`$["layers"][7]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][8]`] = ""
+	diffs[`$["layers"][9]["frame"]["constrainProportions"]`] = ""
+	diffs[`$["layers"][10]["frame"]`] = ""
+	diffs[`$["layers"]`] = ""
+	diffs[`$["layers"][12]["frame"]["constrainProportions"][12]`] = ""
+
+	sorted := GetSortedDescDelActions(diffs)
+
+	mergeInfo2, _ := json.MarshalIndent(sorted, "", "  ")
+	fmt.Println(string(mergeInfo2))
+
+	mergeInfo, _ := json.MarshalIndent(sorted, "", "  ")
+	fmt.Println(string(mergeInfo))
+
+	l := PathLength(sorted[0])
+	for i := range sorted  {
+		ll := PathLength(sorted[i])
+		if l < ll {
+			t.Errorf("Sorting issue: %d < %d", l, ll)
+		}
+		l = ll
+	}
+}

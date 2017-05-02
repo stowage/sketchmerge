@@ -361,14 +361,17 @@ func merge(workingDirV1 string, workingDirV2 string, fileName string, objectKeyN
 
 	//Perform all deletions
 	//First iteration will only mark to delete
-	for key, _ := range deleteActions {
-		mergeDoc.MergeByJSONPath("", key, MarkElementToDelete)
+	delActionsArr := GetSortedDescDelActions(deleteActions)
+	//for key, _ := range deleteActions {
+	for i:= range delActionsArr {
+		mergeDoc.MergeByJSONPath("", delActionsArr[i], MarkElementToDelete) //
 	}
 
 	//second iteration will delete
 	//TODO: optimize second call
-	for key, _ := range deleteActions {
-		mergeDoc.MergeByJSONPath("", key, DeleteMarked)
+	//for key, _ := range deleteActions {
+	for i:= range delActionsArr {
+		mergeDoc.MergeByJSONPath("", delActionsArr[i], DeleteMarked)
 	}
 
 	//Perform sorting
@@ -422,16 +425,19 @@ func (mergeDoc * MergeDocuments) mergeChanges(srcFilePath string, dstFilePath st
 func (mergeDoc * MergeDocuments) mergeDeletions(deleteActions map[string]string) error {
 	//Perform all deletions
 	//First iteration will only mark to delete
-	for key, _ := range deleteActions {
-		if err := mergeDoc.MergeByJSONPath("", key, MarkElementToDelete); err != nil {
+	delActionsArr := GetSortedDescDelActions(deleteActions)
+	//for key, _ := range deleteActions {
+	for i:= range delActionsArr {
+		if err := mergeDoc.MergeByJSONPath("", delActionsArr[i] , MarkElementToDelete); err != nil {
 			return err
 		}
 	}
 
 	//second iteration will delete
 	//TODO: optimize second call
-	for key, _ := range deleteActions {
-		if err := mergeDoc.MergeByJSONPath("", key, DeleteMarked); err != nil {
+	//for key, _ := range deleteActions {
+	for i:= range delActionsArr {
+		if err := mergeDoc.MergeByJSONPath("", delActionsArr[i], DeleteMarked); err != nil {
 			continue
 		}
 	}
