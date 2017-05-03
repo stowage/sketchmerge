@@ -1080,29 +1080,37 @@ func decodeMergeFile(doc1File string) (map[string]interface{}, error) {
 func decodeMergeFiles(doc1File string, doc2File string) (map[string]interface{}, map[string]interface{}, error) {
 
 	fileDoc1, eDoc1 := ioutil.ReadFile(doc1File)
-	if eDoc1 != nil {
-		return nil, nil, eDoc1
-	}
+	//if eDoc1 != nil {
+	//	return nil, nil, eDoc1
+	//}
 
 	fileDoc2, eDoc2 := ioutil.ReadFile(doc2File)
-	if eDoc2 != nil {
-		return nil, nil, eDoc2
-	}
+	//if eDoc2 != nil {
+	//	return nil, nil, eDoc2
+	//}
 
 	var result1 map[string]interface{}
-	var decoder1 = json.NewDecoder(bytes.NewReader(fileDoc1))
-	decoder1.UseNumber()
+	if eDoc1 == nil {
+		var decoder1= json.NewDecoder(bytes.NewReader(fileDoc1))
+		decoder1.UseNumber()
 
-	if err := decoder1.Decode(&result1); err != nil {
-		return nil, nil, err
+		if err := decoder1.Decode(&result1); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		result1 = make(map[string]interface{})
 	}
 
 	var result2 map[string]interface{}
-	var decoder2 = json.NewDecoder(bytes.NewReader(fileDoc2))
-	decoder2.UseNumber()
+	if eDoc2 == nil {
+		var decoder2= json.NewDecoder(bytes.NewReader(fileDoc2))
+		decoder2.UseNumber()
 
-	if err := decoder2.Decode(&result2); err != nil {
-		return nil, nil, err
+		if err := decoder2.Decode(&result2); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		result2 = make(map[string]interface{})
 	}
 
 	return result1, result2, nil

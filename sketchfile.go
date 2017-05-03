@@ -566,9 +566,11 @@ func buildFileActions(workingDirV1 string, workingDirV2 string, mergeJSON FileSt
 			if strings.HasPrefix(key,"A") {
 				fileMerge.Action = ADD
 				mergeMap[fileName] = fileMerge
+				continue
 			} else if strings.HasPrefix(key,"D") {
 				fileMerge.Action = DELETE
 				mergeMap[fileName] = fileMerge
+				continue
 			}
 
 			//remove all file references and set as normal json
