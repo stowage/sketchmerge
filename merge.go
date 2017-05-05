@@ -355,9 +355,8 @@ func ReversAction(s1 string, s2 string) (string, string) {
 		s1 = "D" + a1[1:] + s1
 		s2 = s1
 	} else if a1 != "" && a1[0] == 'D' {
-		sw := s1
 		s1 = "A" + a1[1:] + s1
-		s2 = sw
+		s2 = s1
 	} else if s1[0] == '+' {
 		s1 = a1 + "-" + s1[1:]
 		s2 = ""

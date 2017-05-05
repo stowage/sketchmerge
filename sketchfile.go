@@ -1,3 +1,4 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
 package sketchmerge
 
 import (
@@ -127,7 +128,7 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMe
 		return nil, err
 	}
 
-	if _, _, err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
+	if _, _, _,  err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
 		return nil, err
 	}
 
@@ -202,12 +203,11 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructu
 		return nil, err
 	}
 
-	if _, _, err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err!=nil {
+	if depObj1, depObj2, fileMergeDoc, err := ProceedDependencies(workingDirV1, workingDirV2, fsMerge.MergeActions); err == nil {
+		return fsMerge, fsMerge.ProduceNiceDiffWithDependencies("local", workingDirV1, workingDirV2, depObj1, depObj2, fileMergeDoc)
+	} else  {
 		return nil, err
 	}
-
-	err := fsMerge.ProduceNiceDiffWithDependencies("local", workingDirV1, workingDirV2)
-	return fsMerge, err
 
 }
 
@@ -302,20 +302,20 @@ func ProcessNiceFileDiff3Way(sketchFileV0, sketchFileV1, sketchFileV2 string) (*
 	if err := fsMerge1.CompareDocuments(workingDirV1, workingDirV0); err != nil {
 		return nil, err
 	}
-
-	if _, _, err := ProceedDependencies(workingDirV1, workingDirV0, fsMerge1.MergeActions); err!=nil {
+	depObj11, depObj12, fileMergeDoc1, err := ProceedDependencies(workingDirV1, workingDirV0, fsMerge1.MergeActions)
+	if err!=nil {
 		return nil, err
 	}
 
 	if err := fsMerge2.CompareDocuments(workingDirV2, workingDirV0); err != nil {
 		return nil, err
 	}
-
-	if _, _, err := ProceedDependencies(workingDirV2, workingDirV0, fsMerge2.MergeActions); err!=nil {
+	depObj21, depObj22, fileMergeDoc2, err := ProceedDependencies(workingDirV2, workingDirV0, fsMerge2.MergeActions)
+	if err != nil {
 		return nil, err
 	}
 
-	return ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2, fsMerge1, fsMerge2)
+	return ProcessFileStructures3Way(workingDirV0, workingDirV1, workingDirV2, fsMerge1, fsMerge2, depObj11, depObj12, depObj21, depObj22, fileMergeDoc1, fileMergeDoc2)
 
 }
 

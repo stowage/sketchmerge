@@ -209,7 +209,19 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 				dep.AddDependent(sid.(string), fileJsonPath2, fileJsonPath1, fileKey)
 			}
 
+			//_ref := layer["_ref"]
+			//if _ref != nil {
+			//	if IsSketchID(_ref) {
+			//		if strings.HasPrefix(_ref.(string), "pages" + string(os.PathSeparator)) {
+			//			_ref = strings.TrimPrefix(_ref.(string), "pages" + string(os.PathSeparator))
+			//		}
+			//		dep.AddDependent(_ref.(string), fileJsonPath2, fileJsonPath1, fileKey)
+			//	}
+			//}
+
 			lid := layer["do_objectID"]
+
+
 
 			var objectID string
 
@@ -221,6 +233,8 @@ func (dep* DependentObjects) ResolveDependencies(fileKey string, filepath string
 				}
 				return true
 			}
+
+
 			//fmt.Printf("do_objId: %v %v\n", filepath, lid)
 			objectID = lid.(string)
 
@@ -461,7 +475,7 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 	return docDep
 }
 
-func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) (*DependentObjects, *DependentObjects, error) {
+func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []FileMerge ) (*DependentObjects, *DependentObjects, *FileMerge, error) {
 
 	depObj1 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
 	depObj2 := DependentObjects{ SOURCE, make(map[string]interface{}), make(map[string]interface{})}
@@ -470,26 +484,32 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 	fileMap1, err1 := depObj1.buildDependencePaths(SOURCE, workingDirV1, workingDirV2, fileMerge, &depObj2)
 
 	if err1!=nil {
-		return nil, nil, err1
+		return nil, nil, nil, err1
 	}
 
 	fileMap2, err2 := depObj2.buildDependencePaths(DESTINATION, workingDirV2, workingDirV1, fileMerge, &depObj1)
 	if err2!=nil {
-		return nil, nil, err2
+		return nil, nil, nil, err2
 	}
 
 	info1, _ := json.MarshalIndent(depObj1, "", "  ")
-	fmt.Printf("%v\n", string(info1))
+	fmt.Printf("buildDependencePaths1: %v\n", string(info1))
 
 	info2, _ := json.MarshalIndent(depObj2, "", "  ")
-	fmt.Printf("%v\n", string(info2))
+	fmt.Printf("buildDependencePaths2:  %v\n", string(info2))
+
+	var fileMergeDoc * FileMerge
 
 	//build dependent jsonpaths for each file
 	for i := range fileMerge {
 		fileMerge[i].FileDiff.DepDoc1 = addDependencies(SOURCE, fileMerge[i].FileKey, &depObj1, fileMerge[i].FileDiff.DepDoc1, fileMap1, make(map[string]bool))
 		fileMerge[i].FileDiff.DepDoc2 = addDependencies(DESTINATION, fileMerge[i].FileKey, &depObj2, fileMerge[i].FileDiff.DepDoc2, fileMap2, make(map[string]bool))
+
+		if fileMerge[i].FileKey == "document" {
+			fileMergeDoc = &fileMerge[i]
+		}
 	}
-	return &depObj1, &depObj2, nil;
+	return &depObj1, &depObj2, fileMergeDoc, nil;
 }
 
 //Find dependent jsonpaths to matchingKey recursively
@@ -559,7 +579,7 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 						continue
 					}
 
-					//if key refers to other file append to action which belong to this file
+					//if key refers to other file append to action which belongs to this file
 					if fileKey != "" && fileNewKey == "" {
 						newKey = fileKey + newKey
 					}

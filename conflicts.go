@@ -1,3 +1,4 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
 package sketchmerge
 
 import (

@@ -1,3 +1,4 @@
+// Copyright 2017 Sergey Fedoseev. All rights reserved.
 package main
 
 import (
@@ -38,6 +39,11 @@ func main() {
 		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge\n")
 		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are merged into baseline file")
 		fmt.Printf("	  		[<merge_file2>] should be also specified")
+		fmt.Printf("\n")
+		fmt.Printf("	Optional merge restrictions for whole page merge operations (uses OR conjuction)")
+		fmt.Printf("	  --filter-page=<page id> (-fp) allows only given page id")
+		fmt.Printf("	  --filter-artboard=<artboard id> (-fa) allows only given artboard id")
+		fmt.Printf("	  --filter-class=<className> (-fc) allows only objects of given class with sublayers")
 		fmt.Printf("\n")
 		fmt.Printf("	Required parameters for 'merge' operations:\n")
 		fmt.Printf("	  --output=<path to dir> (-o <path to dir>) - output resulting sketch file to dir\n")
