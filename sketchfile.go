@@ -18,6 +18,11 @@ import (
 	"path"
 )
 
+type PageFilter struct {
+	FilterPageID string
+	FilterArtboardID string
+	FilterClassName string
+}
 
 
 func prepareWorkingDir(hasToCreate bool) (string, error) {
@@ -473,6 +478,79 @@ func (mergeDoc * MergeDocuments) mergeSequentions(objectKeyName string, seqDiff 
 	return nil
 }
 
+func (fl * PageFilter) FilteroutContent(workingDirV1, workingDirV2, fileKey string) error {
+
+	if !strings.HasPrefix(fileKey, "pages" + string(os.PathSeparator)) {
+		updateFile(workingDirV1, workingDirV2, fileKey)
+		return nil
+	}
+
+	srcFilePath := workingDirV1 + string(os.PathSeparator) + fileKey
+	dstFilePath := workingDirV2 + string(os.PathSeparator) + fileKey
+	baseFileName := path.Base(dstFilePath)
+
+	targetDir := strings.TrimSuffix(dstFilePath, baseFileName)
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		os.MkdirAll(targetDir, 0777)
+	}
+
+
+	fileDoc1, eDoc1 := ioutil.ReadFile(srcFilePath)
+	if eDoc1 != nil {
+		return eDoc1
+	}
+
+	var result1 map[string]interface{}
+	if eDoc1 == nil {
+		var decoder1= json.NewDecoder(bytes.NewReader(fileDoc1))
+		decoder1.UseNumber()
+
+		if err := decoder1.Decode(&result1); err != nil {
+			return err
+		}
+	}
+
+	layers, hasLayers := result1["layers"].([]interface{})
+	newLayers := make([]interface{}, 0)
+
+	if hasLayers {
+		for i := range layers {
+			layer, isLayer := layers[i].(map[string]interface{})
+			if !isLayer {
+				continue
+			}
+			artboardID, hasID := layer["do_objectID"].(string)
+			className, hasClass := layer["_class"].(string)
+
+			if !hasID && !hasClass {
+				continue
+			}
+
+			if fl.FilterArtboardID == artboardID ||
+			   fl.FilterClassName == className {
+				newLayers = append(newLayers, layer)
+			}
+		}
+	}
+
+	if len(newLayers) > 0 || result1["do_objectID"] != fl.FilterPageID {
+		result1["layers"] = newLayers
+	}
+
+	//if result1["do_objectID"] != fl.FilterPageID {
+	//	updateFile(workingDirV1, workingDirV2, fileKey)
+	//	return nil
+	//}
+
+	data, err := json.Marshal(result1)
+
+	if err != nil {
+		return err
+	}
+
+	return WriteToFile(dstFilePath, data)
+}
+
 //This functions overwrites file
 func updateFile(workingDirV1, workingDirV2, fileKey string) {
 	targetFileName := workingDirV2 + string(os.PathSeparator) + fileKey
@@ -754,7 +832,7 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	return nil
 }
 
-func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge) error {
+func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStructureMerge, fl * PageFilter) error {
 	defer TimeTrack(time.Now(), "mergeActions " + workingDirV1)
 
 	mergeActions := buildFileActions(workingDirV1, workingDirV2, mergeJSON)
@@ -785,7 +863,11 @@ func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStruct
 		fileName := mergeActions[i].FileKey + mergeActions[i].FileExt
 
 		if !mergeActions[i].IsDirectory && mergeActions[i].Action == ADD {
-			updateFile(workingDirV1, workingDirV2, fileName)
+			if fl == nil {
+				updateFile(workingDirV1, workingDirV2, fileName)
+			} else {
+				fl.FilteroutContent(workingDirV1, workingDirV2, fileName)
+			}
 			continue
 		}
 
@@ -804,7 +886,7 @@ func mergeActions(workingDirV1 string, workingDirV2 string, mergeJSON FileStruct
 	return nil
 }
 
-func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string) error {
+func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 string, outputDir string, filter * PageFilter) error {
 	defer TimeTrack(time.Now(), "ProcessFileMerge " + sketchFileV1)
 
 	isSrcDir := false
@@ -871,7 +953,7 @@ func ProcessFileMerge(mergeFileName string, sketchFileV1 string, sketchFileV2 st
 		return  err
 	}
 
-	if err := mergeActions(workingDirV1, workingDirV2, mergeJSON); err != nil  {
+	if err := mergeActions(workingDirV1, workingDirV2, mergeJSON, filter); err != nil  {
 		return err
 	}
 

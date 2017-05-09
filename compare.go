@@ -350,36 +350,36 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 	if artboard != nil && li.LayerID != ""{
 
 		//Get recent layer
-		//if len(li.LayerIDs) > 0 {
-		//	layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]]
-		//
-		//	if layer == nil {
-		//		layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
-		//		artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]] = layer
-		//	}
-		//
-		//	if len(li.LayerIDs) > 1 {
-		//		for i := 1; i < len(li.LayerIDs); i++ {
-		//			parentLayer := layer
-		//
-		//			layer = parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]]
-		//			if layer == nil {
-		//				layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
-		//				parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]] = layer
-		//			}
-		//
-		//
-		//		}
-		//	}
-		//
-		//} else {
+		if len(li.LayerIDs) > 0 {
+			layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]]
+
+			if layer == nil {
+				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]] = layer
+			}
+
+			if len(li.LayerIDs) > 1 {
+				for i := 1; i < len(li.LayerIDs); i++ {
+					parentLayer := layer
+
+					layer = parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]]
+					if layer == nil {
+						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+						parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]] = layer
+					}
+
+
+				}
+			}
+
+		} else {
 			layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerID]
 
 			if layer == nil {
 				layer = SketchLayerDiff{Name: li.LayerName, MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
 				artboard.(SketchArtboardDiff).LayerDiff[li.LayerID] = layer
 			}
-		//}
+		}
 		_layer := layer.(SketchLayerDiff)
 
 		actual = &_layer

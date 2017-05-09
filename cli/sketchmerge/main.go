@@ -37,13 +37,13 @@ func main() {
 		fmt.Printf("\n")
 		fmt.Printf("	Optional parameters for 'merge' operation:\n")
 		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge\n")
-		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are merged into baseline file")
-		fmt.Printf("	  		[<merge_file2>] should be also specified")
+		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are merged into baseline file\n")
+		fmt.Printf("	  		[<merge_file2>] should be also specified\n")
 		fmt.Printf("\n")
-		fmt.Printf("	Optional merge restrictions for whole page merge operations (uses OR conjuction)")
-		fmt.Printf("	  --filter-page=<page id> (-fp) allows only given page id")
-		fmt.Printf("	  --filter-artboard=<artboard id> (-fa) allows only given artboard id")
-		fmt.Printf("	  --filter-class=<className> (-fc) allows only objects of given class with sublayers")
+		fmt.Printf("	Optional merge restrictions for whole page adding operations (uses OR conjuction for class and artboardID)\n")
+		fmt.Printf("	  --filter-page=<page id> (-fp) export primarily only page with given page id\n")
+		fmt.Printf("	  --filter-artboard=<artboard id> (-fa) allows only given artboard id\n")
+		fmt.Printf("	  --filter-class=<className> (-fc) allows only objects of given class with sublayers\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Required parameters for 'merge' operations:\n")
 		fmt.Printf("	  --output=<path to dir> (-o <path to dir>) - output resulting sketch file to dir\n")
@@ -211,6 +211,9 @@ func main() {
 		outputToDir := ""
 		baselineVersion := ""
 		is3WayMerge := false
+		filterPageId := ""
+		filterArtboardId := ""
+		filterClassName := ""
 		for argc := 1; argc < flag.NArg(); argc++ {
 			switch flag.Arg(argc) {
 
@@ -223,10 +226,29 @@ func main() {
 				baselineVersion = flag.Arg(argc)
 				is3WayMerge = true
 				break
+			case "-fp", "--filter-page":
+				argc++
+				filterPageId = flag.Arg(argc)
+				break
+			case "-fa", "--filter-artboard":
+				argc++
+				filterArtboardId = flag.Arg(argc)
+				break
+			case "-fc", "--filter-class":
+				argc++
+				filterClassName = flag.Arg(argc)
+				break
+
 			default:
 				if strings.HasPrefix(flag.Arg(argc), "--baseline=") {
 					baselineVersion = strings.TrimPrefix(flag.Arg(argc), "--baseline=")
 					is3WayMerge = true
+				} else if strings.HasPrefix(flag.Arg(argc), "--filter-page=") {
+					filterPageId = strings.TrimPrefix(flag.Arg(argc), "--filter-page=")
+				} else if strings.HasPrefix(flag.Arg(argc), "--filter-artboard=") {
+					filterArtboardId = strings.TrimPrefix(flag.Arg(argc), "--filter-artboard=")
+				} else if strings.HasPrefix(flag.Arg(argc), "--filter-class=") {
+					filterClassName = strings.TrimPrefix(flag.Arg(argc), "--filter-class=")
 				} else if strings.HasPrefix(flag.Arg(argc), "--output=") {
 					outputToDir = strings.TrimPrefix(flag.Arg(argc), "--output=")
 				} else {
@@ -261,8 +283,15 @@ func main() {
 			os.Exit(1)
 		}
 
+
+
 		if !is3WayMerge {
-			err := sketchmerge.ProcessFileMerge(files[0], files[1], files[2], outputToDir)
+
+			var filter * sketchmerge.PageFilter
+			if filterPageId != "" || filterArtboardId != "" || filterClassName != "" {
+				filter = &sketchmerge.PageFilter{filterPageId, filterArtboardId, filterClassName}
+			}
+			err := sketchmerge.ProcessFileMerge(files[0], files[1], files[2], outputToDir, filter)
 
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
