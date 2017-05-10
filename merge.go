@@ -26,6 +26,7 @@ type Selection interface {
 	Apply(v interface{}) (interface{}, Node, error)
 	ApplyWithEvent(v interface{}, e NodeEvent) (interface{}, Node, error)
 	GetKey() (interface{})
+	GetExpr() (interface{})
 	GetCurrentPath() string
 }
 
@@ -140,6 +141,10 @@ func (r *RootNode) GetKey() interface{} {
 	return nil
 }
 
+func (r *RootNode) GetExpr() interface{} {
+	return nil
+}
+
 func (r *RootNode) GetCurrentPath() string {
 
 	return "$"
@@ -174,6 +179,12 @@ func (m *MapSelection) GetKey() interface{} {
 	return m.Key
 }
 
+func (m *MapSelection) GetExpr() interface{} {
+
+	return nil
+}
+
+
 func (m *MapSelection) GetCurrentPath() string {
 
 	return "[\"" + m.Key + "\"]"
@@ -181,10 +192,45 @@ func (m *MapSelection) GetCurrentPath() string {
 
 type ArraySelection struct {
 	Key int
+	Expr string
 	RootNode
 }
 func (a *ArraySelection) Apply(v interface{}) (interface{}, Node, error) {
 	return a.ApplyWithEvent(v, nil)
+}
+
+//parse expressions like @do_objectID='...'
+//quotes inside quotes are not supported
+func ParseKeyStringValueExpression(expr string) (string, string, error) {
+	n := strings.Index(expr, "=")
+	if n == -1 {
+		return "", expr, SyntaxError
+	}
+
+	if expr == "" || expr[0] != '@' {
+		return "", expr, SyntaxError
+	}
+
+	key := expr[1:n]
+
+	expr = expr[n+1:]
+
+	n = strings.Index(expr, "'")
+	if n == -1 {
+		return key, expr, SyntaxError
+	}
+
+	expr = expr[n+1:]
+
+	n = strings.Index(expr, "'")
+	if n == -1 {
+		return key, expr, SyntaxError
+	}
+
+	value := expr[:n]
+
+	return key, value, nil
+
 }
 
 func (a *ArraySelection) ApplyWithEvent(v interface{}, e NodeEvent) (interface{}, Node, error) {
@@ -192,12 +238,35 @@ func (a *ArraySelection) ApplyWithEvent(v interface{}, e NodeEvent) (interface{}
 	if !ok {
 		return v, a, ArrayTypeError
 	}
+
+	//Check if it's an expression
+	if a.Key == -1 && a.Expr != "" {
+		key, value, err := ParseKeyStringValueExpression(a.Expr)
+		if err != nil {
+			return nil, a, err
+		}
+		for i := range arv {
+			m, isMap := arv[i].(map[string]interface{})
+			if !isMap {
+				break
+			}
+			if m[key] == value {
+				if e != nil && !e(arv[i], a.PrevNode, a) {
+					return arv[i], a, nil
+				}
+				//log.Printf("key: %v value: %v\n", key, value)
+				return applyNext(a.NextNode, a, arv[i], e)
+			}
+		}
+	}
+
 	// Check to see if the value is in bounds for the array.
 	if a.Key < 0 || a.Key >= len(arv) {
 		return nil, a, IndexOutOfBounds
 
 	}
 
+	//call event if event processing returns false stop path
 	if e != nil && !e(arv[a.Key], a.PrevNode, a) {
 		return arv[a.Key], a, nil
 	}
@@ -209,8 +278,15 @@ func (a *ArraySelection) GetKey() interface{} {
 	return a.Key
 }
 
+func (a *ArraySelection) GetExpr() interface{} {
+	return a.Expr
+}
+
 func (a *ArraySelection) GetCurrentPath() string {
 
+	if a.Key == -1 {
+		return "[" + a.Expr + "]"
+	}
 	return "[" + strconv.Itoa(a.Key) + "]"
 }
 
@@ -512,7 +588,8 @@ func getNode(s string) (Node, string, error) {
 	default: // Assume it's a array index otherwise.
 		i, err := strconv.Atoi(s[1:n])
 		if err != nil {
-			return nil, rs, SyntaxError
+			return &ArraySelection{Key: -1, Expr: s[1:n]}, rs, nil
+			//return nil, rs, SyntaxError
 		}
 		//fmt.Printf("parse array %v\n", i)
 		return &ArraySelection{Key: i}, rs, nil

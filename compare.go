@@ -1231,6 +1231,23 @@ func (jsc * JsonStructureCompare) removeDoc2ObjectRelocated(objectKeyValue strin
 	delete(jsc.Doc2ObjRelocate, objectKeyValue)
 }
 
+func artboardAddress(doc1TreeArray []interface{}, idxDoc1 int) string {
+	alternateAddr1 := strconv.Itoa(idxDoc1)
+
+	if idxDoc1 != -1 {
+		if doc1Dict, isDict := doc1TreeArray[idxDoc1].(map[string]interface{}); isDict {
+			doc1ObjID, isObjID := doc1Dict["do_objectID"].(string)
+			doc1ObjClass := doc1Dict["_class"]
+
+			if isObjID && (doc1ObjClass == "artboard" || doc1ObjClass == "symbolMaster") {
+				alternateAddr1 = "@do_objectID='" + doc1ObjID + "'"
+			}
+		}
+	}
+
+	return alternateAddr1
+}
+
 //Compare each element in array node
 func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc2TreeArray []interface{}, pathDoc1 string, pathDoc2 string) (string, string, bool) {
 	//defer timeTrack(time.Now(), "CompareSlices " + path)
@@ -1244,8 +1261,12 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 
 	//go thru array associations with the same objectKeyName for doc1
 	for idxDoc1, idxDoc2 := range doc1Changes {
-		jsonpathDoc1 := strings.Join([]string{pathDoc1, "[", strconv.Itoa(idxDoc1), "]"}, "")
-		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
+
+		alternateAddr1 := artboardAddress(doc1TreeArray, idxDoc1)
+		alternateAddr2 := artboardAddress(doc2TreeArray, idxDoc2)
+
+		jsonpathDoc1 := strings.Join([]string{pathDoc1, "[", alternateAddr1, "]"}, "")
+		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", alternateAddr2, "]"}, "")
 		if idxDoc1 == idxDoc2 {
 			//remove similar indeces
 			delete(doc1ChangesCopy, idxDoc1)
@@ -1273,7 +1294,9 @@ func (jsc * JsonStructureCompare) CompareSlices(doc1TreeArray []interface{}, doc
 			delete(doc2ChangesCopy, idxDoc2)
 		}
 
-		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", strconv.Itoa(idxDoc2), "]"}, "")
+		alternateAddr2 := artboardAddress(doc2TreeArray, idxDoc2)
+
+		jsonpathDoc2 := strings.Join([]string{pathDoc2, "[", alternateAddr2, "]"}, "")
 
 		if idxDoc1 == -1 {
 
