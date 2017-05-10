@@ -285,7 +285,7 @@ func (a *ArraySelection) GetExpr() interface{} {
 
 func (a *ArraySelection) GetCurrentPath() string {
 
-	if a.Key == -1 {
+	if a.Expr != "" {
 		return "[" + a.Expr + "]"
 	}
 	return "[" + strconv.Itoa(a.Key) + "]"
