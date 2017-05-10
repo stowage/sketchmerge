@@ -254,6 +254,7 @@ func (a *ArraySelection) ApplyWithEvent(v interface{}, e NodeEvent) (interface{}
 				if e != nil && !e(arv[i], a.PrevNode, a) {
 					return arv[i], a, nil
 				}
+				a.Key = i
 				//log.Printf("key: %v value: %v\n", key, value)
 				return applyNext(a.NextNode, a, arv[i], e)
 			}
