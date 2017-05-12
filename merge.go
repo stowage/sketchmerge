@@ -264,6 +264,7 @@ func (a *ArraySelection) ApplyWithEvent(v interface{}, e NodeEvent) (interface{}
 
 	// Check to see if the value is in bounds for the array.
 	if a.Key < 0 || a.Key >= len(arv) {
+		log.Printf("IndexOutOfBound: %v", GetPath(a))
 		return nil, a, IndexOutOfBounds
 
 	}

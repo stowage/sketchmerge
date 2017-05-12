@@ -527,7 +527,7 @@ func (fl * PageFilter) FilteroutContent(workingDirV1, workingDirV2, fileKey stri
 			}
 
 			if fl.FilterArtboardID == artboardID ||
-			   fl.FilterClassName == className {
+			   fl.FilterClassName == className || (fl.FilterArtboardID == fl.FilterPageID && result1["do_objectID"] == fl.FilterPageID) {
 				newLayers = append(newLayers, layer)
 			}
 		}
