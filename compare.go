@@ -5,6 +5,7 @@
 // This is not a regular jsonpath, but json paths queries with extensions
 // Regular jsonpath:
 // 	$["layers"][1] - addresses an element in array
+// 	$["layers"][@do_objectID='59E11126-A64E-4325-9832-1F4D625C272B'] - addresses an element in array by finding appropriate key
 //	$["layers"][1]["frame"] - addresses property
 // Json Path with actions:
 //	^$["layers"] - tells that sequence of array has changed

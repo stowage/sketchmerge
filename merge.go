@@ -5,7 +5,7 @@ package sketchmerge
 import (
 	"errors"
 	"io"
-	_"fmt"
+	"fmt"
 	_ "reflect"
 	_ "sort"
 	"strconv"
@@ -166,6 +166,7 @@ func (m *MapSelection) ApplyWithEvent(v interface{}, e NodeEvent) ( interface{},
 	}
 	nv, ok := mv[m.Key]
 	if !ok {
+		log.Printf("Node path not found: %v", GetPath(m))
 		return nil, m, NotFound
 	}
 	if e != nil && !e(nv, m.PrevNode, m) {
@@ -807,6 +808,18 @@ func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
 	finArr = compactSlice(finArr)
 
 	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = finArr
+
+	fmt.Println("delete marked\n")
+	for i := range finArr   {
+		if finArr[i] != nil {
+			fmt.Printf(",%v", i)
+		} else {
+			fmt.Printf(",n")
+		}
+	}
+	fmt.Println()
+
+	log.Printf("len fin: %v\n", len(finArr) )
 	//log.Printf("finArr: %v\n", finArr)
 	return nil
 }
@@ -1043,7 +1056,7 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 		return dsterr
 	}
 
-	fordst, _, fderr := dstSel.Apply(md.DstDocument)
+	fordst, arrLastNode, fderr := dstSel.Apply(md.DstDocument)
 	if fderr != nil {
 		return fderr;
 	}
@@ -1051,6 +1064,19 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	forsrc, _, fserr := srcSel.Apply(md.SrcDocument)
 	if fserr != nil {
 		return fserr;
+	}
+
+	prevNode := arrLastNode.GetPrev()
+	prevNode.SetNext(nil)
+
+	if prevNode == nil {
+		return NotFound
+	}
+
+	findst, _, finerr := dstSel.Apply(md.DstDocument)
+
+	if finerr != nil {
+		return finerr
 	}
 
 	//build id associations by objectID
@@ -1087,14 +1113,33 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 		}
 	}
 
+	for i := range newslice   {
+		if newslice[i] != nil {
+			fmt.Printf("%v\n", newslice[i].(map[string]interface{})["do_objectID"])
+
+		} else {
+			fmt.Printf("N\n")
+		}
+	}
+	fmt.Println()
+
 	newslice = compactSlice(newslice)
-	newslice = append(compactSlice(slice), newslice...)
+	//newslice = append(compactSlice(extslice), newslice...)
+	//dt := len(slice) - len(newslice)
+	//if dt > 0 {
+	//	for i:=0; i<dt; i++  {
+	//		newslice = append(newslice, nil)
+	//	}
+	//}
+
 
 	//TODO: we have the same method to delete marked elements
 	//it shifts all nil values to the end
 	//k:=0
 	//for i := 0 ; i < len(newslice); i++  {
+	//
 	//	if newslice[k] == nil && newslice[i] != nil {
+	//
 	//		newslice[k] = newslice[i]
 	//		newslice[i] = nil
 	//	}
@@ -1103,12 +1148,19 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	//	}
 	//}
 
-	//for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
-	//	if slice[k] != nil { //if element has been found appen it to final array
-	//		newslice = append([]interface{}{slice[k]}, newslice...)
-	//		slice[k] = nil
-	//	}
-	//}
+
+
+
+	//
+	//log.Printf("aftercat len: %v %v\n", len(slice), len(newslice) )
+	//
+	for k:=0 ; k<len(slice); k++ { //go thru all destination elements and find not marked elements
+		if slice[k] != nil { //if element has been found appen it to final array
+			newslice = append([]interface{}{slice[k]}, newslice...)
+			slice[k] = nil
+		}
+	}
+
 
 	//TODO: or we should use this algorithm
 	//Put all not relocated not marked slice[idxDoc2] = nil elements toavailable positions
@@ -1126,8 +1178,38 @@ func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath
 	//	}
 	//}
 
+	//for i := range newslice   {
+	//	if newslice[i] != nil {
+	//		fmt.Printf("%v\n", newslice[i].(map[string]interface{})["do_objectID"])
+	//
+	//	} else {
+	//		fmt.Printf("N\n")
+	//	}
+	//}
+	//fmt.Println()
+
 	//Copy elements
-	copy(slice, newslice)
+	//copy(slice, newslice)
+	findst.(map[string]interface{})[arrLastNode.GetKey().(string)] = newslice
+
+	//for i := range slice   {
+	//	if slice[i] != nil {
+	//		fmt.Printf(",%v", i)
+	//	} else {
+	//		fmt.Printf(",NN")
+	//	}
+	//}
+	//fmt.Println()
+
+	//for i := range slice   {
+	//	if slice[i] != nil {
+	//		fmt.Printf(",%v", i)
+	//	} else {
+	//		fmt.Printf(",%v (nil)", i)
+	//	}
+	//}
+	//fmt.Println()
+	log.Printf("len: %v %v\n", len(slice), len(newslice) )
 
 	return nil
 }
