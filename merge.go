@@ -264,7 +264,7 @@ func (a *ArraySelection) ApplyWithEvent(v interface{}, e NodeEvent) (interface{}
 
 	// Check to see if the value is in bounds for the array.
 	if a.Key < 0 || a.Key >= len(arv) {
-		log.Printf("IndexOutOfBound: %v", GetPath(a))
+		log.Printf("IndexOutOfBound: %v %v:%v", GetPath(a), a.Key, len(arv))
 		return nil, a, IndexOutOfBounds
 
 	}
@@ -758,6 +758,13 @@ func (md * MergeDocuments) deleteArrayElement(dstNode Node) error {
 }
 
 
+//TODO: That wil not happen in following cases:
+//TODO: -$[\"layers\"][@do_objectID='C498E581-E71B-40D7-A2B5-C5BD125A57D2']
+//TODO: because markToDelArrayElement will set the value to nil
+//TODO: and object can't be found by @do_objectID='C498E581-E71B-40D7-A2B5-C5BD125A57D2' because it has been set to nil
+//TODO: for that case it's important to add following action: "^$[\"layers\"]": "^$[\"layers\"]"
+//TODO: that will remove nil layers. nil layers will damage sketch document, so it couldn't be opened
+//TODO: we need to run compactSlice for previous element
 //Delete an element from sequence array
 func (md * MergeDocuments) deleteMarkedElements(dstNode Node) error {
 
@@ -861,6 +868,29 @@ func (md * MergeDocuments) markToDelArrayElement(dstNode Node) error {
 
 
 	index := lastDstNode.GetKey().(int)
+
+	//Ususally we have a correct index, so we don't need that
+	//if index == -1 {
+	//	if expr, isExpr := lastDstNode.GetExpr().(string); isExpr {
+	//
+	//		key, value, err := ParseKeyStringValueExpression(expr)
+	//		if err == nil {
+	//			arv := fordst.([]interface{})
+	//			for i := range arv {
+	//				m, isMap := arv[i].(map[string]interface{})
+	//				if !isMap {
+	//					break
+	//				}
+	//				if m[key] == value {
+	//					index = i
+	//					log.Printf("isExpr key: %v value: %v\n", key, value)
+	//					break
+	//
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 	finArr := fordst.([]interface{})
 	finArr[index] = nil
 
@@ -1035,7 +1065,8 @@ func compactSlice(newslice []interface{}) []interface{} {
 	return newslice[:k]
 }
 
-//Merge order sequence of an array
+//TODO: Clean method from comments
+//Merge order sequence of an array this will also remove nil layers
 func (md * MergeDocuments) MergeSequenceByJSONPath(objectKeyName string, srcPath string, dstPath string) error {
 
 	//Check if its a sequence change action

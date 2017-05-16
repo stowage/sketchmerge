@@ -725,7 +725,8 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 
 	//We will perform delete operations after isertions to avoid
 	//actions on the same index
-	deleteMerges := make(map[string]interface{})
+	deleteMerges1 := make(map[string]interface{})
+	deleteMerges2 := make(map[string]interface{})
 	seqMerges1 := make(map[string]interface{})
 	seqMerges2 := make(map[string]interface{})
 
@@ -739,11 +740,12 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 			_err := mergeDoc.mergeChanges(srcFilePath, dstFilePath,
 				fileName,
 				fm.FileDiff.Doc1Diffs, deleteActions, seqDiff)
-			deleteMerges[fileName] = deleteActions
+			deleteMerges1[fileName] = deleteActions
 			seqMerges1[fileName] = seqDiff
 			return _err
 		} ); err != nil {
-			return err
+			continue
+			//return err
 		}
 
 	}
@@ -751,7 +753,7 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsRemote {
 
 		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV2, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			deleteActions :=  deleteMerges[fileName]
+			deleteActions :=  deleteMerges1[fileName]
 			if deleteActions == nil {
 				deleteActions = make(map[string]string)
 			}
@@ -761,11 +763,12 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 			_err := mergeDoc.mergeChanges(srcFilePath, dstFilePath,
 				fileName,
 				fm.FileDiff.Doc1Diffs, deleteActions.(map[string]string), seqDiff)
-			deleteMerges[fileName] = deleteActions
+			deleteMerges2[fileName] = deleteActions
 			seqMerges2[fileName] = seqDiff
 			return _err
 		}); err != nil {
-			return err
+			//return err
+			continue
 		}
 
 	}
@@ -774,13 +777,30 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsLocal {
 
 		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			deleteActions :=  deleteMerges[fileName]
+			deleteActions :=  deleteMerges1[fileName]
 			if deleteActions == nil {
 				return nil
 			}
 			return mergeDoc.mergeDeletions(deleteActions.(map[string]string))
 		} ); err != nil {
-			return err
+			continue
+			//return err
+		}
+
+	}
+
+	//Perform delete actions
+	for i := range mergeActionsRemote {
+
+		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			deleteActions :=  deleteMerges2[fileName]
+			if deleteActions == nil {
+				return nil
+			}
+			return mergeDoc.mergeDeletions(deleteActions.(map[string]string))
+		} ); err != nil {
+			continue
+			//return err
 		}
 
 	}
@@ -795,7 +815,8 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 			}
 			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff.(map[string]string))
 		} ); err != nil {
-			return err
+			continue
+			//return err
 		}
 
 	}
@@ -809,7 +830,8 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 			}
 			return mergeDoc.mergeSequentions(fm.FileDiff.ObjectKeyName, seqDiff.(map[string]string))
 		} ); err != nil {
-			return err
+			continue
+			//return err
 		}
 
 	}
@@ -818,13 +840,35 @@ func mergeActions3Way(workingDirV0, workingDirV1, workingDirV2 string, mergeJSON
 	for i := range mergeActionsLocal {
 
 		if err := mergeActionsLocal[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
-			deleteActions :=  deleteMerges[fileName]
+			deleteActions :=  deleteMerges1[fileName]
 			if deleteActions == nil {
 				return nil
 			}
 			return mergeDoc.mergeConfirmDeletions(deleteActions.(map[string]string))
 		} ); err != nil {
-			return err
+			//we will ignore this kind of errors
+			//if we are using adreesing $["layers"][@do_objectID='59E11126-A64E-4325-9832-1F4D625C272B']
+			//there wil be nil objects/layers because they are marked to delete
+			continue
+			//return err
+		}
+
+	}
+
+	for i := range mergeActionsRemote {
+
+		if err := mergeActionsRemote[i].PerformMergeChanges(workingDirV0, workingDirV1, func(srcFilePath, dstFilePath, fileName string, fm * FileMerge, mergeDoc * MergeDocuments) error {
+			deleteActions :=  deleteMerges2[fileName]
+			if deleteActions == nil {
+				return nil
+			}
+			return mergeDoc.mergeConfirmDeletions(deleteActions.(map[string]string))
+		} ); err != nil {
+			//we will ignore this kind of errors
+			//if we are using adreesing $["layers"][@do_objectID='59E11126-A64E-4325-9832-1F4D625C272B']
+			//there wil be nil objects/layers because they are marked to delete
+			continue
+			//return err
 		}
 
 	}
