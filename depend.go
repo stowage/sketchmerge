@@ -10,8 +10,8 @@ import (
 	"time"
 	"path/filepath"
 	"os"
-	"encoding/json"
-	"fmt"
+	_"encoding/json"
+	_"fmt"
 )
 const GuidFormat = "^[a-z0-9]{8}-[a-z0-9]{4}-[1-5][a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{12}$"
 
@@ -88,7 +88,7 @@ func IsSketchID(value interface{}) bool {
 	return DetectID(value)
 }
 
-func (dep* DependentObjects) AddDependentObject(key string, value interface{}, jsonpath string)  {
+func (dep* DependentObjects) AddDependentObject(key string, value interface{}, jsonpath string) bool {
 
 	var depKey string
 	var depMap map[string]interface{}
@@ -133,7 +133,11 @@ func (dep* DependentObjects) AddDependentObject(key string, value interface{}, j
 			depItem = make([]interface{}, 0)
 		}
 		depMap[depKey] = append(depItem.([]interface{}), DependentObj{JsonPath:jsonpath})
+
+		return true
 	}
+
+	return false
 
 }
 
@@ -419,7 +423,9 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 				if depPaths[j].(DependentObj).FileKey != fileKey {
 
 					//Add dependent path
+					//if strings.HasPrefix(paths[k].(DependentObj).JsonPath, "A") || !strings.HasPrefix(depPaths[j].(DependentObj).FileKey, "pages") {
 					docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, depPaths[j].(DependentObj).Ref, depPaths[j].(DependentObj).JsonPath)
+					//}
 
 					//get file details from associated map build by buildDependencePaths in order to get particular dependent objects for file
 					fileMerge, isFileMerge := fileMap[depPaths[j].(DependentObj).FileKey].(FileMerge)
@@ -438,6 +444,7 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 							//Find dependencies recursively
 							docSubDep := &DependentObjects{ docType, docDiffs.DepObj, make(map[string]interface{})}
 							stopFileKey[fileKey] = true
+
 							subDep := addDependencies(docType, depPaths[j].(DependentObj).FileKey, depObj, docSubDep, fileMap, stopFileKey)
 
 							//Add jsonpaths to current dependency
@@ -445,14 +452,16 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 								subDepPath, isPath := subPath.([]interface{})
 								if isPath {
 									for i := range subDepPath {
-										var newFileKey = "~" + fileMerge.FileKey + fileMerge.FileExt + "~" + subKey
+										var newFileKey= "~" + fileMerge.FileKey + fileMerge.FileExt + "~" + subKey
 										//keep prefix if jsonpath contain fileName
 										if strings.HasPrefix(subKey, "~") ||
 											strings.HasPrefix(subKey, "A") ||
 											strings.HasPrefix(subKey, "D") {
 											newFileKey = subKey
 										}
+										//if strings.HasPrefix(subDepPath[i].(DependentObj).JsonPath, "A") || !strings.HasPrefix(depPaths[j].(DependentObj).FileKey, "pages") {
 										docDep.AddDependentPath(newFileKey, subDepPath[i].(DependentObj).Ref, subDepPath[i].(DependentObj).JsonPath)
+										//}
 									}
 								}
 							}
@@ -465,7 +474,9 @@ func addDependencies(docType DocumentType, fileKey string, depObj * DependentObj
 					ref := FlatJsonPath(depPaths[j].(DependentObj).Ref, false)
 					jsonpath := FlatJsonPath(depPaths[j].(DependentObj).JsonPath, false)
 					if jsonpath != "" {
+					//	if strings.HasPrefix(paths[k].(DependentObj).JsonPath, "A") || !strings.HasPrefix(depPaths[j].(DependentObj).FileKey, "pages") {
 						docDep.AddDependentPath(paths[k].(DependentObj).JsonPath, ref, jsonpath)
+					//	}
 					}
 				}
 			}
@@ -492,11 +503,11 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 		return nil, nil, nil, err2
 	}
 
-	info1, _ := json.MarshalIndent(depObj1, "", "  ")
-	fmt.Printf("buildDependencePaths1: %v\n", string(info1))
-
-	info2, _ := json.MarshalIndent(depObj2, "", "  ")
-	fmt.Printf("buildDependencePaths2:  %v\n", string(info2))
+	//info1, _ := json.MarshalIndent(depObj1, "", "  ")
+	//fmt.Printf("buildDependencePaths1: %v\n", string(info1))
+	//
+	//info2, _ := json.MarshalIndent(depObj2, "", "  ")
+	//fmt.Printf("buildDependencePaths2:  %v\n", string(info2))
 
 	var fileMergeDoc * FileMerge
 
@@ -517,6 +528,9 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 //matchingKey is merge jsonpath
 func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
 
+	if strings.Contains(matchingKey, "resizingConstraint") || strings.Contains(matchingKey, "archivedAttributedString") || strings.Contains(matchingKey, "points") || strings.Contains(matchingKey, "frame") {
+		return
+	}
 	//remove file names from action jsonpath
 	matchingKeyWithouFile := FlatJsonPath(matchingKey, false)
 	//if it's delete action that will affect destination file so changing processing file
@@ -544,6 +558,7 @@ func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string,
 		return
 	}
 
+	//log.Printf("FindMatchingDiffs: %v %v", matchingKey, len(depPaths1))
 	for key, item := range depPaths1 {
 
 		//remove all file actions from key jsonpath

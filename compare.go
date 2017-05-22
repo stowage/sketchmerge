@@ -112,6 +112,7 @@ type SketchArtboardDiff struct {
 type SketchPageDiff struct {
 	Name string `json:"name,omitempty"`
 	ArtboardDiff map[string]interface{} `json:"artboard_diff,omitempty"`
+	LayerDiff map[string]interface{} `json:"layer_diff,omitempty"`
 	MainDiff
 }
 
@@ -316,7 +317,7 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 
 		//if page is not exists then create it
 		if page == nil {
-			page = SketchPageDiff{Name: li.PageName, ArtboardDiff: make(map[string]interface{}), MainDiff: MainDiff{ Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{}) }}
+			page = SketchPageDiff{Name: li.PageName, ArtboardDiff: make(map[string]interface{}), LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{ Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{}) }}
 			diff.PageDiff[li.PageID] = page
 		}
 		_page := page.(SketchPageDiff)
@@ -379,6 +380,44 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 			if layer == nil {
 				layer = SketchLayerDiff{Name: li.LayerName, MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
 				artboard.(SketchArtboardDiff).LayerDiff[li.LayerID] = layer
+			}
+		}
+		_layer := layer.(SketchLayerDiff)
+
+		actual = &_layer
+		actualID = li.LayerID
+		actualName = li.LayerName
+		className = li.ClassName
+		frame = li.frame
+	} else if page != nil && li.LayerID != "" {
+		if len(li.LayerIDs) > 0 {
+			layer = page.(SketchPageDiff).LayerDiff[li.LayerIDs[0]]
+
+			if layer == nil {
+				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				page.(SketchPageDiff).LayerDiff[li.LayerIDs[0]] = layer
+			}
+
+			if len(li.LayerIDs) > 1 {
+				for i := 1; i < len(li.LayerIDs); i++ {
+					parentLayer := layer
+
+					layer = parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]]
+					if layer == nil {
+						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+						parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]] = layer
+					}
+
+
+				}
+			}
+
+		} else {
+			layer = page.(SketchPageDiff).LayerDiff[li.LayerID]
+
+			if layer == nil {
+				layer = SketchPageDiff{Name: li.LayerName, LayerDiff:make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				page.(SketchPageDiff).LayerDiff[li.LayerID] = layer
 			}
 		}
 		_layer := layer.(SketchLayerDiff)
@@ -1018,11 +1057,12 @@ func (jsc * JsonStructureCompare) traverseDependentObjects(objKey string, docTre
 }
 
 //Adds dependencies to given objKey
-func (jsc * JsonStructureCompare) AddDependentObjects(objKey string, docTree * interface{}, dep * DependentObjects, jsonpath string) {
+func (jsc * JsonStructureCompare) AddDependentObjects(objKey string, docTree * interface{}, dep * DependentObjects, jsonpath string) bool {
 	if !!jsc.traverseDependentObjects(objKey, docTree, dep, jsonpath) {
 
-		dep.AddDependentObject(objKey, *docTree, jsonpath )
+		return dep.AddDependentObject(objKey, *docTree, jsonpath )
 	}
+	return false
 }
 
 
