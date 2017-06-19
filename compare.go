@@ -57,13 +57,17 @@ type SketchLayerInfo struct {
 	LayerID string
 	LayerNames []string
 	LayerIDs []string
+	LayerFrames []*LayerFrame
+	LayerPaths []string
 	ArtboardName string
 	ArtboardID string
 	PageName string
 	PageID string
 	ActualPath string
+	ArtboardPath string
 	ClassName string
 	frame *LayerFrame
+	Data map[string]interface{}
 }
 
 //Unique id for sketch layer
@@ -73,7 +77,7 @@ func (li * SketchLayerInfo) fingerprint(solt string) string {
 
 //Interface for setting up/grouping differences
 type Difference interface {
-	SetDiff(action ApplyAction, actualPath, src , dst, name, className string, frame * LayerFrame, loc string) DiffObject
+	SetDiff(action ApplyAction, actualPath, src , dst, name, className string, loc string) DiffObject
 	SetCollision(oid string)
 	GetDiff() map[string]interface{}
 }
@@ -97,6 +101,7 @@ type MainDiff struct {
 //Sketch layer differencies
 type SketchLayerDiff struct {
 	Name string `json:"name,omitempty"`
+	Data map[string]interface{} `json:"data,omitempty"`
 	LayerDiff map[string]interface{} `json:"layer_diff,omitempty"`
 	MainDiff
 }
@@ -104,6 +109,7 @@ type SketchLayerDiff struct {
 //Artboard differencies
 type SketchArtboardDiff struct {
 	Name string `json:"name,omitempty"`
+	Data map[string]interface{} `json:"data,omitempty"`
 	LayerDiff map[string]interface{} `json:"layer_diff,omitempty"`
 	MainDiff
 }
@@ -133,7 +139,7 @@ func (sd* MainDiff) SetCollision(oid string) {
 }
 
 //Set difference info for given layer, artboard or page
-func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, className string, frame * LayerFrame, loc string) DiffObject  {
+func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, className string, loc string) DiffObject  {
 
 	strAction := ""
 
@@ -172,14 +178,14 @@ func (sd* MainDiff) SetDiff(action ApplyAction, actualPath, src , dst , name, cl
 		descriptions["class"] = className
 	}
 
-	if frame != nil {
-		frameMap := make(map[string]interface{})
-		frameMap["x"] = frame.x
-		frameMap["y"] = frame.y
-		frameMap["width"] = frame.width
-		frameMap["height"] = frame.height
-		descriptions["frame"] = frameMap
-	}
+	//if frame != nil {
+	//	frameMap := make(map[string]interface{})
+	//	frameMap["x"] = frame.x
+	//	frameMap["y"] = frame.y
+	//	frameMap["width"] = frame.width
+	//	frameMap["height"] = frame.height
+	//	descriptions["frame"] = frameMap
+	//}
 
 	if preAction, ok := descriptions["action"].(string); ok {
 		if preAction == "SequenceChange" {
@@ -294,10 +300,125 @@ func CompareJSON(doc1File string, doc2File string) (*JsonStructureCompare, error
 	return jsCompare, nil
 }
 
+func (li * SketchLayerInfo) appendFrame(diffData map[string]interface{},path string, frame * LayerFrame, loc string) {
 
+	if li.Data != nil {
+
+		if _, ok := diffData[loc]; !ok {
+			diffData[loc] = make(map[string]interface{})
+		}
+
+		locData := diffData[loc].(map[string]interface{})
+
+		if _, ok := locData[li.ActualPath]; !ok {
+			locData[path] = make(map[string]interface{})
+		}
+
+		data := locData[path].(map[string]interface{})
+		if frame != nil {
+			frameMap := make(map[string]interface{})
+			frameMap["x"] = frame.x
+			frameMap["y"] = frame.y
+			frameMap["width"] = frame.width
+			frameMap["height"] = frame.height
+			data["frame"] = frameMap
+		}
+	}
+}
+
+func mergeContentData(existingData map[string]interface{}, newData map[string]interface{}) map[string]interface{} {
+	isEmpty := true
+	isSingleLeveled := true
+	firstKey := ""
+	secondKey := ""
+
+	if existingData != nil {
+		isEmpty = false
+	}
+
+	if !isEmpty {
+		 if data, hasData := newData["diff"].(map[string]interface{}); hasData {
+			 for key, value := range data {
+				 firstKey = key
+				 if prop, ok := value.(map[string]interface{}); ok {
+					 for key, _ := range prop {
+						 secondKey = key
+						 isSingleLeveled = false
+						 break
+					 }
+				 }
+				 break
+			 }
+
+			 diff, ok := existingData["diff"].(map[string]interface{})
+			 if !ok {
+				 existingData["diff"] = newData["diff"]
+				 return existingData
+			 }
+
+			 if isSingleLeveled {
+				 diff[firstKey] = data[firstKey]
+			 } else {
+				 subData, hasSubData := diff[firstKey].(map[string]interface{})
+				 if hasSubData {
+					 subData[secondKey] = data[firstKey].(map[string]interface{})[secondKey]
+				 } else {
+					 diff[firstKey] = data[firstKey]
+				 }
+
+			 }
+
+			 return existingData
+		 }
+
+
+	}
+
+	return newData
+}
+
+func (li * SketchLayerInfo) appendItems(diffData map[string]interface{}, loc string, srclayer, dstlayer interface{}) {
+
+	if li.Data != nil {
+		if len(li.Data) == 0 {
+			return
+		}
+
+		if srclayer != nil && dstlayer != nil {
+			if _, ok := diffData["info"]; !ok {
+				diffData["info"] = make(map[string]interface{})
+			}
+			info := diffData["info"].(map[string]interface{})
+			info["original"] = dstlayer
+			info[loc] = srclayer
+		}
+
+		if _, ok := diffData[loc]; !ok {
+			diffData[loc] = make(map[string]interface{})
+		}
+
+		locData := diffData[loc].(map[string]interface{})
+
+
+		if _, ok := locData[li.ActualPath]; !ok {
+			locData[li.ActualPath] = make(map[string]interface{})
+		}
+
+		data := locData[li.ActualPath].(map[string]interface{})
+
+		for path, item := range li.Data {
+			//data[path] = item
+			if strings.HasPrefix(path, li.ActualPath) {
+				mergeContentData(data, item.(map[string]interface{}))
+			} else {
+				data[path] = item
+			}
+		}
+	}
+}
 
 //This method is part of nice json process
-func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, diffSrc string, diffDst string, loc string) (string, Difference) {
+func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, diffSrc string, diffDst string, loc string, srclayer, dstlayer interface{}) (string, Difference) {
 
 	var page interface{}
 	var artboard interface{}
@@ -335,10 +456,21 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		artboard = page.(SketchPageDiff).ArtboardDiff[li.ArtboardID]
 
 		if artboard == nil {
-			artboard = SketchArtboardDiff{Name: li.ArtboardName, LayerDiff: make(map[string]interface{}), MainDiff:MainDiff{ Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})} }
+			artboard = SketchArtboardDiff{Name: li.ArtboardName, LayerDiff: make(map[string]interface{}), MainDiff:MainDiff{ Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{}) }
 			page.(SketchPageDiff).ArtboardDiff[li.ArtboardID] = artboard
+			data := artboard.(SketchArtboardDiff).Data
+			li.appendFrame(data, li.ArtboardPath, li.frame, loc)
 		}
+
+
 		_artboard := artboard.(SketchArtboardDiff)
+		data := _artboard.Data
+
+		//li.appendFrame(data, li.ArtboardPath, li.frame, loc)
+
+		if li.LayerID == "" {
+			li.appendItems(data, loc, srclayer, dstlayer)
+		}
 
 		//set actual differnce to artboard
 		actual = &_artboard
@@ -356,9 +488,13 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 			layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]]
 
 			if layer == nil {
-				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{})}
 				artboard.(SketchArtboardDiff).LayerDiff[li.LayerIDs[0]] = layer
+				data := layer.(SketchLayerDiff).Data
+				li.appendFrame(data, li.LayerPaths[0], li.LayerFrames[0], loc)
 			}
+
+
 
 			if len(li.LayerIDs) > 1 {
 				for i := 1; i < len(li.LayerIDs); i++ {
@@ -366,21 +502,38 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 
 					layer = parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]]
 					if layer == nil {
-						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{})}
 						parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]] = layer
+						data := layer.(SketchLayerDiff).Data
+						li.appendFrame(data, li.LayerPaths[i], li.LayerFrames[i], loc)
 					}
 
 
 				}
+				data := layer.(SketchLayerDiff).Data
+
+				li.appendItems(data, loc, srclayer, dstlayer)
+			} else {
+				data := layer.(SketchLayerDiff).Data
+				li.appendItems(data, loc, srclayer, dstlayer)
 			}
 
 		} else {
 			layer = artboard.(SketchArtboardDiff).LayerDiff[li.LayerID]
 
 			if layer == nil {
-				layer = SketchLayerDiff{Name: li.LayerName, MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				layer = SketchLayerDiff{Name: li.LayerName, MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{})}
 				artboard.(SketchArtboardDiff).LayerDiff[li.LayerID] = layer
+				data := layer.(SketchLayerDiff).Data
+				li.appendFrame(data, li.ActualPath, li.frame, loc)
 			}
+
+			data := layer.(SketchLayerDiff).Data
+
+			li.appendItems(data, loc, srclayer, dstlayer)
+
+
+
 		}
 		_layer := layer.(SketchLayerDiff)
 
@@ -394,8 +547,11 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 			layer = page.(SketchPageDiff).LayerDiff[li.LayerIDs[0]]
 
 			if layer == nil {
-				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+				layer = SketchLayerDiff{Name: li.LayerNames[0], LayerDiff:make(map[string]interface{}) , MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{})}
 				page.(SketchPageDiff).LayerDiff[li.LayerIDs[0]] = layer
+				data := layer.(SketchLayerDiff).Data
+				li.appendFrame(data, li.LayerPaths[0], li.LayerFrames[0], loc)
+
 			}
 
 			if len(li.LayerIDs) > 1 {
@@ -404,12 +560,19 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 
 					layer = parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]]
 					if layer == nil {
-						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}}
+						layer = SketchLayerDiff{Name: li.LayerNames[i], LayerDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff: make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, Data:make(map[string]interface{})}
 						parentLayer.(SketchLayerDiff).LayerDiff[li.LayerIDs[i]] = layer
+						data := layer.(SketchLayerDiff).Data
+						li.appendFrame(data, li.LayerPaths[i], li.LayerFrames[i], loc)
 					}
 
-
 				}
+				data := layer.(SketchLayerDiff).Data
+
+				li.appendItems(data, loc, srclayer, dstlayer)
+			} else {
+				data := layer.(SketchLayerDiff).Data
+				li.appendItems(data, loc, srclayer, dstlayer)
 			}
 
 		} else {
@@ -428,8 +591,9 @@ func (li * SketchLayerInfo) SetDifference(action ApplyAction, diff SketchDiff, d
 		className = li.ClassName
 		frame = li.frame
 	}
+	_=frame
 
-	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName, className, frame, loc)
+	_=actual.SetDiff(action, li.ActualPath, diffSrc, diffDst, actualName, className, loc)
 
 	return actualID, actual
 
@@ -537,6 +701,11 @@ func (fsMerge * FileStructureMerge) ProduceDiffWithDependencies() error {
 }
 
 func getLayerFrame(iframe interface{}) *LayerFrame {
+
+	if iframe == nil {
+		return nil
+	}
+
 	frame, isFrame := iframe.(map[string]interface{})
 
 	if isFrame {
@@ -554,6 +723,109 @@ func getLayerFrame(iframe interface{}) *LayerFrame {
 
 }
 
+func (li * SketchLayerInfo) propertyChangeInfo(doc1 map[string]interface{}, doc2 map[string]interface{}, key1 string, key2 string, loc string) (interface{}, interface{}) {
+	layerSel, _, _ := Parse(li.ActualPath)
+	srcSel, srcact, _ := Parse(key1)
+	dstSel, _, _ := Parse(key2)
+
+	if srcact == ValueChange {
+		layervalue, _, _ := layerSel.Apply(doc1)
+		var srclayer interface{}
+		srcvalue, lastnode, _ := srcSel.ApplyWithEvent(doc1, func(v interface{}, prevNode Node, node Node) bool {
+			if prevNode == nil {
+				layer := v.(map[string]interface{})
+				if layer != nil {
+					srclayer = layer
+				}
+			} else if prevNode.GetKey() == "layers" {
+				layer := v.(map[string]interface{})
+				if layer != nil {
+					srclayer = layer
+				}
+			}
+			return true
+		})
+		var dstlayer interface{}
+		dstvalue, _, _ := dstSel.ApplyWithEvent(doc2, func(v interface{}, prevNode Node, node Node) bool {
+			if prevNode == nil {
+				layer := v.(map[string]interface{})
+				if layer != nil {
+					dstlayer = layer
+				}
+			} else if prevNode.GetKey() == "layers" {
+				layer := v.(map[string]interface{})
+				if layer != nil {
+					dstlayer = layer
+				}
+			}
+			return true
+
+		})
+
+		if layer, ok := layervalue.(map[string]interface{}); ok {
+			data := make(map[string]interface{})
+
+			for key, _ := range layer {
+				if key != "layers" {
+				 	if strings.Contains(key1,  fmt.Sprintf("\"%v\"", key)) {
+
+						info := srcvalue
+						//make([]interface{}, 2)
+						//info[0] = srcvalue
+						//info[1] = dstvalue
+
+						prop := make(map[string]interface{})
+						selkey := lastnode.GetKey()
+						if selkey == nil || selkey == key {
+							selkey = ""
+							data[key] = info
+						} else {
+							prop[fmt.Sprintf("%v", selkey)] = info
+
+							data[key] = prop
+						}
+					}
+				}
+			}
+
+			meta := make(map[string]interface{})
+
+			meta["diff"] = data
+			li.Data[key1] = meta
+		}
+
+		if layer, ok := srclayer.(map[string]interface{}); ok {
+			data := make(map[string]interface{})
+
+			for key, value := range layer {
+				if key != "layers" {
+					data[key] = value
+				}
+			}
+			srcvalue = data
+		}
+
+		if layer, ok := dstlayer.(map[string]interface{}); ok {
+			data := make(map[string]interface{})
+
+			for key, value := range layer {
+				if key != "layers" {
+					data[key] = value
+				}
+			}
+			dstvalue = data
+		}
+
+		return srcvalue, dstvalue
+		//li.Data["original"] = dstvalue
+		//li.Data[loc] = srcvalue
+
+	}
+
+	return nil, nil
+
+}
+
 //Find most actual object representing given layer
 func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key string) (SketchLayerInfo, ApplyAction) {
 	var pageID = ""
@@ -565,12 +837,15 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 
 	layerIDs := make([]string, 0)
 	layerNames := make([]string, 0)
+	layerFrames := make([]*LayerFrame, 0)
+	layerPaths := make([]string, 0)
 
 	var layerID = ""
 	var layerName string = ""
 	var layerPath string = ""
 
 	var actualPath string = ""
+	var artboardPath string = ""
 
 	var className = ""
 
@@ -632,6 +907,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 					//artboardID = sid.(string)
 					layerPath += "/" + artboardName
 					actualPath =  GetPath(node)
+					artboardPath = actualPath
 					if lclass != nil {
 						className = lclass.(string)
 					}
@@ -643,6 +919,7 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 					artboardID = lid.(string)
 					layerPath += "/" + artboardName
 					actualPath =  GetPath(node)
+					artboardPath = actualPath
 					if lclass != nil {
 						className = lclass.(string)
 					}
@@ -658,10 +935,14 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 						className = lclass.(string)
 					}
 					if lframe != nil {
-						frame = getLayerFrame(lframe)
+						layerFrames = append(layerFrames, getLayerFrame(lframe))
+					} else {
+						layerFrames = append(layerFrames, nil)
 					}
 					layerIDs = append(layerIDs, layerID)
 					layerNames = append(layerNames, layerName)
+					layerPaths = append(layerPaths, actualPath)
+
 				}
 
 
@@ -681,10 +962,10 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 
 
 	diff := SketchLayerInfo{ layerName, layerID,
-				layerNames, layerIDs,
+				layerNames, layerIDs, layerFrames, layerPaths,
 				artboardName, artboardID,
 				pageName, pageID,
-				actualPath, className, frame}
+				actualPath, artboardPath, className, frame, make(map[string]interface{})}
 
 	return diff, srcact
 }
@@ -711,7 +992,9 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 
 		diff, srcact := ReadKeyValue(doc1, doc2, key)
 
-		diff.SetDifference(srcact, *skDiff, key, item.(string), loc)
+		srclayer, dstlayer := diff.propertyChangeInfo(doc1, doc2, key, item.(string), loc)
+
+		diff.SetDifference(srcact, *skDiff, key, item.(string), loc, srclayer, dstlayer)
 
 		mathingDiffs := make(map[string]interface{})
 
@@ -726,7 +1009,7 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 					}
 				}
 			}
-			diff.SetDifference(srcact, *skDiff, mKey, mItem.(string), loc)
+			diff.SetDifference(srcact, *skDiff, mKey, mItem.(string), loc, nil, nil)
 		}
 
 		if strings.HasPrefix(fileName, "pages" + string(os.PathSeparator)) {
@@ -737,7 +1020,7 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 					items1, hasItems1 := depObj1.DepObj[fileKey].([]interface{})
 					if hasItems1 {
 						for i := range items1 {
-							diff.SetDifference(srcact, *skDiff, items1[i].(DependentObj).JsonPath, items1[i].(DependentObj).Ref, loc)
+							diff.SetDifference(srcact, *skDiff, items1[i].(DependentObj).JsonPath, items1[i].(DependentObj).Ref, loc, nil, nil)
 						}
 					}
 				//} else {
@@ -746,7 +1029,7 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 						for i := range items2 {
 							r1, r2 := ReversAction(items2[i].(DependentObj).JsonPath, items2[i].(DependentObj).Ref)
 							if r1 != "" {
-								diff.SetDifference(srcact, *skDiff, r1, r2, loc)
+								diff.SetDifference(srcact, *skDiff, r1, r2, loc, nil, nil)
 							}
 						}
 					}
@@ -758,9 +1041,9 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 							dep, isDep := page[i].(DependentObj)
 							if isDep {
 								if fileAction == ADD {
-									diff.SetDifference(srcact, *skDiff, "~document.json~+"+dep.JsonPath, "[\"pages\"]", loc)
+									diff.SetDifference(srcact, *skDiff, "~document.json~+"+dep.JsonPath, "[\"pages\"]", loc, nil, nil)
 								} else {
-									diff.SetDifference(srcact, *skDiff, "~document.json~-"+dep.JsonPath, "", loc)
+									diff.SetDifference(srcact, *skDiff, "~document.json~-"+dep.JsonPath, "", loc, nil, nil)
 								}
 							}
 						}
@@ -773,9 +1056,9 @@ func (skDiff * SketchDiff) ProduceNiceDiff(loc string, fileAction FileActionType
 							dep, isDep := page[i].(DependentObj)
 							if isDep {
 								if fileAction == ADD {
-									diff.SetDifference(srcact, *skDiff, "~document.json~+"+dep.JsonPath, "[\"pages\"]", loc)
+									diff.SetDifference(srcact, *skDiff, "~document.json~+"+dep.JsonPath, "[\"pages\"]", loc, nil, nil)
 								} else {
-									diff.SetDifference(srcact, *skDiff, "~document.json~-"+dep.JsonPath, "", loc)
+									diff.SetDifference(srcact, *skDiff, "~document.json~-"+dep.JsonPath, "", loc, nil, nil)
 
 
 								}

@@ -528,6 +528,10 @@ func ProceedDependencies(workingDirV1 string, workingDirV2 string, fileMerge []F
 //matchingKey is merge jsonpath
 func FindMatchingDiffs(docType DocumentType,fileName string, matchingKey string, depPaths1 map[string]interface{}, depPaths2 map[string]interface{}, diffs map[string]interface{}) {
 
+	//TODO: Filter out attributes for dependencies do it different way.
+	// We don't need lookup for dependencies for many attributes like frames points and etc, because there is no
+	// dependncies for float values
+	// could we just check if it's a primitive type? it could very specific fot points or is there any other type
 	if strings.Contains(matchingKey, "resizingConstraint") || strings.Contains(matchingKey, "archivedAttributedString") || strings.Contains(matchingKey, "points") || strings.Contains(matchingKey, "frame") {
 		return
 	}

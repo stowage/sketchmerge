@@ -21,7 +21,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Printf("Usage of %s:\n", os.Args[0])
-		fmt.Printf("    sketchmerge diff [optional] <merge_file> <dst_file_or_dir> <src_file_or_dir> ...\n")
+		fmt.Printf("    sketchmerge diff [optional] <dst_file_or_dir> <src_file_or_dir> ...\n")
 		fmt.Printf("    sketchmerge merge -o <output dir> <merge_file> [<merge_file2>] <dst_file_or_dir> <src_file_or_dir> ...\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Operations:\n")
