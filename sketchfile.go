@@ -12,16 +12,22 @@ import (
 	"bytes"
 	"path/filepath"
 	"strings"
-	_"io"
+	"bufio"
+	"io"
 	"fmt"
 	"time"
 	"path"
+	"os/exec"
 )
 
 type PageFilter struct {
 	FilterPageID string
 	FilterArtboardID string
 	FilterClassName string
+}
+
+type DumpInfo struct {
+	ObjectsMap map[string]interface{}
 }
 
 
@@ -67,6 +73,66 @@ func readJSON(docFile string) (map[string]interface{}, error) {
 func WriteToFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0755 )
 }
+
+func (di * DumpInfo) Traverse(docTree * interface{})  {
+
+	switch itemType := (*docTree).(type) {
+	case map[string]interface{}:
+		prop := (*docTree).(map[string]interface{})
+		if objectId, ok := prop["objectID"].(string); ok {
+			log.Printf("store ref: %v", objectId)
+			di.ObjectsMap[objectId] = prop
+		}
+		if _layers, ok := prop["layers"]; ok {
+			layers := _layers
+			di.Traverse(&layers)
+		} else if _layers, ok := prop["pages"]; ok {
+			layers := _layers
+			di.Traverse(&layers)
+		}
+
+	case []interface{}:
+		for i:=range (*docTree).([]interface{}){
+			di.Traverse( &((*docTree).([]interface{})[i]))
+		}
+	default:
+		_=itemType
+	}
+}
+
+func (di * DumpInfo) BuildDumpFileHash(dumpFileName string) {
+	if dumpDoc, err := readJSON(dumpFileName); err == nil {
+		var docTree interface{} = dumpDoc
+		di.Traverse(&docTree)
+	}
+}
+
+func launchSketchToolDump(sketchApp, sketchFile, dumpFile string) error {
+	cmdArgs := []string{"dump", sketchFile}
+	cmd := exec.Command(sketchApp, cmdArgs...)
+	dump, err := os.Create(dumpFile)
+
+	if (err != nil) {
+		return err
+	}
+	defer dump.Close()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	writer := bufio.NewWriter(dump)
+	defer writer.Flush()
+	err = cmd.Start()
+	if (err != nil) {
+		return err
+	}
+	io.Copy(writer, stdout)
+	cmd.Wait()
+	return err
+
+}
+
 
 
 //2-way diff
@@ -144,7 +210,7 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMe
 }
 
 //2-way file difference
-func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMerge, error) {
+func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string, hasInfo bool, dumpFile1 * string, dumpFile2 * string, sketchPath * string, exportPath * string) (*FileStructureMerge, error) {
 	defer TimeTrack(time.Now(), "ProcessNiceFileDiff " + sketchFileV1)
 
 	isSrcDir := false
@@ -198,11 +264,54 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructu
 		}
 	}
 
-	baseFileStruct, newFileStruct := ExtractSketchDirStruct(workingDirV1, workingDirV2)
+	sketchFileSrc := sketchFileV1
+	sketchFileDst := sketchFileV2
 
+	if sketchPath != nil && dumpFile1 != nil && dumpFile2 != nil {
+
+		if isSrcDir {
+			sketchFileSrc := strings.TrimSuffix( sketchFileV1, strings.TrimPrefix(sketchFileV1, filepath.Dir(sketchFileV1)))
+			Zipit(workingDirV1, sketchFileSrc)
+		}
+		if isDstDir {
+			sketchFileDst := strings.TrimSuffix( sketchFileV2, strings.TrimPrefix(sketchFileV2, filepath.Dir(sketchFileV2)))
+			Zipit(workingDirV2, sketchFileDst)
+		}
+
+		if err := launchSketchToolDump(*sketchPath, sketchFileSrc, *dumpFile1); err != nil {
+			return nil, err
+		}
+
+		if err := launchSketchToolDump(*sketchPath, sketchFileDst, *dumpFile2); err != nil {
+			return nil, err
+		}
+	}
+
+	baseFileStruct, newFileStruct := ExtractSketchDirStruct(workingDirV1, workingDirV2)
 
 	fsMerge := new(FileStructureMerge)
 	fsMerge.FileSetChange(newFileStruct, baseFileStruct)
+	fsMerge.hasInfo = hasInfo
+	fsMerge.sketchFileV1 = &sketchFileSrc
+	fsMerge.sketchFileV2 = &sketchFileDst
+
+	fsMerge.exportPath = exportPath
+	fsMerge.sketchPath = sketchPath
+
+	if exportPath != nil {
+		os.MkdirAll(*exportPath + string(os.PathSeparator) + "v1", 0777)
+		os.MkdirAll(*exportPath + string(os.PathSeparator) + "v2", 0777)
+	}
+
+	if dumpFile1 != nil && dumpFile2 != nil {
+		di1 := DumpInfo{make(map[string]interface{})}
+		di1.BuildDumpFileHash(*dumpFile1)
+		fsMerge.dump1 = &di1
+
+		di2 := DumpInfo{make(map[string]interface{})}
+		di2.BuildDumpFileHash(*dumpFile2)
+		fsMerge.dump2 = &di2
+	}
 
 	if err := fsMerge.CompareDocuments(workingDirV1, workingDirV2); err != nil {
 		return nil, err

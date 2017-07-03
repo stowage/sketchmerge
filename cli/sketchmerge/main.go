@@ -33,6 +33,10 @@ func main() {
 		fmt.Printf("	  --baseline=<path to file or dir> (-b <path to file or dir>) - baseline file for 3-way merge case in nice mode (-n)\n")
 		fmt.Printf("	  		<src_file_or_dir> <dst_file_or_dir> are compared against baseline file")
 		fmt.Printf("	  --nice-description (-n) - analyze difference and provide natural language description\n")
+		fmt.Printf("	  --info (-i) - show differences details\n")
+		fmt.Printf("	  --dump-file=<damp file path 1> --dump-file=<damp file path 2> (-df <damp file path 1> <damp file path 2>) - use dump files for differences details\n")
+		fmt.Printf("	  --sketchtool=<path to sketch tool> (-sk <path to sketch tool>) sketchtool path (if dumpfiles will be regenerate using specified sketchtool)\n")
+		fmt.Printf("	  --export=<path to dir> (-e <path to dir>) export artboards and paths to dir\n")
 		fmt.Printf("	  (NOT IMPLEMENTED)--dependencies (-d) ARE ENABLED\n")
 		fmt.Printf("\n")
 		fmt.Printf("	Optional parameters for 'merge' operation:\n")
@@ -108,11 +112,18 @@ func main() {
 		outputToFile := ""
 		baselineVersion := ""
 		isNice := false
+		showInfo := false
+		var sketchPath * string
+		var exportPath * string
+		var dumpFile1 * string
+		var dumpFile2 * string
 		is3WayMerge := false
 		for argc := 1; argc < flag.NArg(); argc++ {
 			switch flag.Arg(argc) {
 			case "-n", "--nice-description":
 				isNice = true
+			case "-i", "--info":
+				showInfo = true
 			case "-d", "--dependencies":
 				break
 			case "-b", "--baseline":
@@ -124,6 +135,21 @@ func main() {
 			case "-f", "--file-output":
 				argc++
 				outputToFile = flag.Arg(argc)
+			case "-sk", "--sketchtool":
+				argc++
+				_sketchPath := flag.Arg(argc)
+				sketchPath = &_sketchPath
+			case "-e", "--export":
+				argc++
+				_exportPath := flag.Arg(argc)
+				exportPath = &_exportPath
+			case "-df", "--dump-file":
+				argc++
+				file1 := flag.Arg(argc)
+				dumpFile1 = &file1
+				argc++
+				file2 := flag.Arg(argc)
+				dumpFile2 = &file2
 			default:
 				if strings.HasPrefix(flag.Arg(argc), "--baseline=") {
 					baselineVersion = strings.TrimPrefix(flag.Arg(argc), "--baseline=")
@@ -131,6 +157,19 @@ func main() {
 					isNice = true
 				} else if strings.HasPrefix(flag.Arg(argc), "--file-output=") {
 					outputToFile = strings.TrimPrefix(flag.Arg(argc), "--file-output=")
+				} else if strings.HasPrefix(flag.Arg(argc), "--sketchtool=") {
+					_sketchPath := strings.TrimPrefix(flag.Arg(argc), "--sketchtool=")
+					sketchPath = &_sketchPath
+				} else if strings.HasPrefix(flag.Arg(argc), "--export=") {
+					_exportPath := strings.TrimPrefix(flag.Arg(argc), "--export=")
+					exportPath = &_exportPath
+				} else if strings.HasPrefix(flag.Arg(argc), "--dump-file=") {
+					file := strings.TrimPrefix(flag.Arg(argc), "--dump-file=")
+					if dumpFile1 != nil {
+						dumpFile2 = &file
+					} else {
+						dumpFile1 = &file
+					}
 				} else {
 					files = append(files, flag.Arg(argc))
 				}
@@ -148,7 +187,7 @@ func main() {
 			if !isNice {
 				fsMerge, err = sketchmerge.ProcessFileDiff(files[0], files[1])
 			} else {
-				fsMerge, err = sketchmerge.ProcessNiceFileDiff(files[0], files[1])
+				fsMerge, err = sketchmerge.ProcessNiceFileDiff(files[0], files[1], showInfo, dumpFile1, dumpFile2, sketchPath, exportPath)
 			}
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
