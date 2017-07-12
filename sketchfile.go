@@ -20,6 +20,14 @@ import (
 	"os/exec"
 )
 
+//import(
+//	"github.com/aws/aws-sdk-go/aws"
+//	"github.com/aws/aws-sdk-go/aws/awsutil"
+//	"github.com/aws/aws-sdk-go/aws/credentials"
+//	"github.com/aws/aws-sdk-go/service/s3"
+//	"github.com/aws/aws-sdk-go/aws/session"
+//)
+
 type PageFilter struct {
 	FilterPageID string
 	FilterArtboardID string
@@ -80,7 +88,7 @@ func (di * DumpInfo) Traverse(docTree * interface{})  {
 	case map[string]interface{}:
 		prop := (*docTree).(map[string]interface{})
 		if objectId, ok := prop["objectID"].(string); ok {
-			log.Printf("store ref: %v", objectId)
+			//log.Printf("store ref: %v", objectId)
 			di.ObjectsMap[objectId] = prop
 		}
 		if _layers, ok := prop["layers"]; ok {
@@ -209,6 +217,58 @@ func ProcessFileDiff(sketchFileV1 string, sketchFileV2 string) (*FileStructureMe
 
 }
 
+func ReadPNGFilesInDir(dir string) []string {
+	files, _ := ioutil.ReadDir(dir)
+	filePaths := make([]string, 0)
+	for _, f := range files {
+		if strings.HasSuffix(strings.ToLower(f.Name()), ".png") {
+			filePaths = append(filePaths, dir+string(os.PathSeparator)+f.Name())
+		}
+	}
+
+	return filePaths
+}
+
+//func UploadFilesToS3(aws_access_key_id, aws_secret_access_key, token, region string, awsBucket, keyFilePath, filesPath []string) error {
+//	creds := credentials.NewStaticCredentials(aws_access_key_id, aws_secret_access_key, token)
+//	_, err := creds.Get()
+//	if err != nil {
+//		return err
+//	}
+//
+//	cfg := aws.NewConfig().WithRegion(region).WithCredentials(creds)
+//	svc := s3.New(session.New(), cfg)
+//
+//	for filePath := range filesPath {
+//		file, err := os.Open(filesPath)
+//		if err != nil {
+//			return err
+//		}
+//		defer file.Close()
+//		fileInfo, _ := file.Stat()
+//		size := fileInfo.Size()
+//		buffer := make([]byte, size)
+//
+//		file.Read(buffer)
+//		fileBytes := bytes.NewReader(buffer)
+//		fileType := http.DetectContentType(buffer)
+//		path := keyFilePath + "/" + file.Name()
+//
+//		params := &s3.PutObjectInput{
+//			Bucket:        aws.String(awsBucket),
+//			Key:           aws.String(path),
+//			Body:          fileBytes,
+//			ContentLength: aws.Int64(size),
+//			ContentType:   aws.String(fileType),
+//		}
+//		resp, err := svc.PutObject(params)
+//		if err != nil {
+//			return err
+//		}
+//		log.Printf("s3: %v", awsutil.StringValue(resp))
+//	}
+//}
+
 //2-way file difference
 func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string, hasInfo bool, dumpFile1 * string, dumpFile2 * string, sketchPath * string, exportPath * string) (*FileStructureMerge, error) {
 	defer TimeTrack(time.Now(), "ProcessNiceFileDiff " + sketchFileV1)
@@ -267,6 +327,18 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string, hasInfo bool,
 	sketchFileSrc := sketchFileV1
 	sketchFileDst := sketchFileV2
 
+	if exportPath != nil {
+		os.MkdirAll(*exportPath + string(os.PathSeparator) + "dst", 0777)
+		os.MkdirAll(*exportPath + string(os.PathSeparator) + "src", 0777)
+		if dumpFile1 == nil || dumpFile2 == nil {
+			os.MkdirAll(*exportPath + string(os.PathSeparator) + "tmp", 0777)
+			_dumpFile1 := *exportPath + string(os.PathSeparator) + "tmp" + strings.TrimSuffix(strings.TrimPrefix(sketchFileV1, filepath.Dir(sketchFileV1)), ".sketch") + ".dump1"
+			_dumpFile2 := *exportPath + string(os.PathSeparator) + "tmp" + strings.TrimSuffix(strings.TrimPrefix(sketchFileV2, filepath.Dir(sketchFileV2)), ".sketch") + ".dump2"
+			dumpFile1 = &_dumpFile1
+			dumpFile2 = &_dumpFile2
+		}
+	}
+
 	if sketchPath != nil && dumpFile1 != nil && dumpFile2 != nil {
 
 		if isSrcDir {
@@ -298,10 +370,7 @@ func ProcessNiceFileDiff(sketchFileV1 string, sketchFileV2 string, hasInfo bool,
 	fsMerge.exportPath = exportPath
 	fsMerge.sketchPath = sketchPath
 
-	if exportPath != nil {
-		os.MkdirAll(*exportPath + string(os.PathSeparator) + "v1", 0777)
-		os.MkdirAll(*exportPath + string(os.PathSeparator) + "v2", 0777)
-	}
+
 
 	if dumpFile1 != nil && dumpFile2 != nil {
 		di1 := DumpInfo{make(map[string]interface{})}

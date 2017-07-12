@@ -805,11 +805,11 @@ func (li * SketchLayerInfo) propertyChangeInfo(doc1 map[string]interface{}, doc2
 			li.Data[key1] = meta
 		}
 
-		log.Printf("dump1: %v\n", len(dump1.ObjectsMap))
+		//log.Printf("dump1: %v\n", len(dump1.ObjectsMap))
 		if layer, ok := srclayer.(map[string]interface{}); ok {
 
 			layerObjID, okLayer := layer["do_objectID"].(string)
-			dumpObjID, okDump := dump1.ObjectsMap[layerObjID].(map[string]interface{})
+			dumpObjID, okDump := (*dump1).ObjectsMap[layerObjID].(map[string]interface{})
 			if dump1 != nil && okDump && okLayer {
 
 				layer = dumpObjID
@@ -826,11 +826,11 @@ func (li * SketchLayerInfo) propertyChangeInfo(doc1 map[string]interface{}, doc2
 			srcvalue = data
 		}
 
-		log.Printf("dump2: %v\n", len(dump2.ObjectsMap))
+		//log.Printf("dump2: %v\n", len(dump2.ObjectsMap))
 		if layer, ok := dstlayer.(map[string]interface{}); ok {
 
 			layerObjID, okLayer := layer["do_objectID"].(string)
-			dumpObjID, okDump := dump2.ObjectsMap[layerObjID].(map[string]interface{})
+			dumpObjID, okDump := (*dump2).ObjectsMap[layerObjID].(map[string]interface{})
 			if dump2 != nil && okDump && okLayer {
 				layer = dumpObjID
 				layer["_class"] = dstlayer.(map[string]interface{})["_class"]
@@ -886,12 +886,12 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 	doc := doc1
 
 	//Delete action usually belongs to destination document which is doc2
-	if /*item == "" &&*/ srcact == ValueDelete {
+	if srcact == ValueDelete {
 		doc = doc2
 	}
 
 	//Walk thru parsed path key
-	_, _, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
+	frag, _, err := srcSel.ApplyWithEvent(doc, func(v interface{}, prevNode Node, node Node) bool {
 
 		if prevNode == nil {
 			//This is root element which is page
@@ -996,6 +996,14 @@ func ReadKeyValue(doc1 map[string]interface{}, doc2 map[string]interface{}, key 
 				artboardName, artboardID,
 				pageName, pageID,
 				actualPath, artboardPath, className, frame, make(map[string]interface{})}
+
+	if srcact == ValueAdd || srcact == ValueDelete {
+		if layer, ok := frag.(map[string]interface{}); ok {
+			if lid := layer["do_objectID"]; lid == nil {
+				srcact = ValueChange
+			}
+		}
+	}
 
 	return diff, srcact
 }
@@ -1332,9 +1340,9 @@ func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(loc string, 
 			if fsMerge.sketchPath != nil && fsMerge.exportPath != nil {
 				pages, artboards := skDiff1.extractExportList()
 				if len(artboards) > 0 {
-					launchSketchToolExport(*fsMerge.sketchPath, "artboards", *fsMerge.sketchFileV1, strings.Join(artboards, ","), *fsMerge.exportPath + string(os.PathSeparator) + "v1")
+					launchSketchToolExport(*fsMerge.sketchPath, "artboards", *fsMerge.sketchFileV1, strings.Join(artboards, ","), *fsMerge.exportPath + string(os.PathSeparator) + "dst")
 				} else if len(pages) > 0 {
-					launchSketchToolExport(*fsMerge.sketchPath, "pages", *fsMerge.sketchFileV1, strings.Join(pages, ","), *fsMerge.exportPath + string(os.PathSeparator) + "v1")
+					launchSketchToolExport(*fsMerge.sketchPath, "pages", *fsMerge.sketchFileV1, strings.Join(pages, ","), *fsMerge.exportPath + string(os.PathSeparator) + "dst")
 				}
 			}
 			if len(jsCompare.Doc1Diffs) > 0 {
@@ -1347,16 +1355,16 @@ func (fsMerge * FileStructureMerge) ProduceNiceDiffWithDependencies(loc string, 
 				fileAction = ADD
 			}
 
-			skDiff2 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, ShowInfo: fsMerge.hasInfo, Dump1: fsMerge.dump1, Dump2: fsMerge.dump2}
+			skDiff2 := SketchDiff{PageDiff: make(map[string]interface{}), MainDiff: MainDiff{Diff:make(map[string]interface{}), DiffInfo: make(map[string]interface{})}, ShowInfo: fsMerge.hasInfo, Dump1: fsMerge.dump2, Dump2: fsMerge.dump1}
 
 			skDiff2.ProduceNiceDiff(loc, fileAction, fileName, result2, result1, jsCompare.Doc2Diffs, jsCompare.DepDoc2.DepPath, jsCompare.DepDoc1.DepPath, depObj2, depObj1, docDep2, docDep1)
 
 			if fsMerge.sketchPath != nil && fsMerge.exportPath != nil {
 				pages, artboards := skDiff2.extractExportList()
 				if len(artboards) > 0 {
-					launchSketchToolExport(*fsMerge.sketchPath, "artboards", *fsMerge.sketchFileV2, strings.Join(artboards, ","), *fsMerge.exportPath + string(os.PathSeparator) + "v2")
+					launchSketchToolExport(*fsMerge.sketchPath, "artboards", *fsMerge.sketchFileV2, strings.Join(artboards, ","), *fsMerge.exportPath + string(os.PathSeparator) + "src")
 				} else if len(pages) > 0 {
-					launchSketchToolExport(*fsMerge.sketchPath, "pages", *fsMerge.sketchFileV2, strings.Join(pages, ","), *fsMerge.exportPath + string(os.PathSeparator) + "v2")
+					launchSketchToolExport(*fsMerge.sketchPath, "pages", *fsMerge.sketchFileV2, strings.Join(pages, ","), *fsMerge.exportPath + string(os.PathSeparator) + "src")
 				}
 			}
 

@@ -9,6 +9,8 @@ import (
 	"github.com/stowage/sketchmerge"
 	"encoding/json"
 	"path/filepath"
+	"bytes"
+	"bufio"
 )
 
 const (
@@ -194,19 +196,29 @@ func main() {
 				os.Exit(1)
 			}
 
-			mergeInfo, err := json.MarshalIndent(fsMerge, "", "  ")
+			var mergeInfo bytes.Buffer
+			writer := bufio.NewWriter(&mergeInfo)
+			encoder1 := json.NewEncoder(writer)
+			encoder1.SetEscapeHTML(false)
+			encoder1.SetIndent("", "  ")
+			//mergeInfo, err := json.MarshalIndent(fsMerge, "", "  ")
+			err = encoder1.Encode(fsMerge)
 			if err != nil {
 				fmt.Printf("Error occured: %v\n", err)
 				os.Exit(1)
 			}
 
+			if outputToFile == "" && exportPath != nil{
+				outputToFile = *exportPath + string(os.PathSeparator) + "diff.json"
+			}
+
 			if outputToFile != "" {
-				if err := sketchmerge.WriteToFile(outputToFile, mergeInfo); err!=nil {
+				if err := sketchmerge.WriteToFile(outputToFile, mergeInfo.Bytes()); err!=nil {
 					fmt.Printf("Error occured: %v\n", err)
 					os.Exit(1)
 				}
 			} else {
-				fmt.Println(string(mergeInfo))
+				fmt.Println(string(mergeInfo.Bytes()))
 			}
 		} else {
 			fsMergeBaseToSrc, err := sketchmerge.ProcessNiceFileDiff3Way(baselineVersion, files[0], files[1])
